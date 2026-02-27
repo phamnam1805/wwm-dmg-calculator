@@ -1,0 +1,44 @@
+# Skill damage formulas
+# dmg = physical_dmg * physical_coeff + attr_dmg * attr_coeff + base_value
+#
+# physical_coeff : multiplier on physical component (default 1.0)
+# attr_coeff     : multiplier on attribute component (default 1.0)
+# base_value     : flat bonus added to every hit (default 0)
+
+[default]
+phys_coeff = 1
+attr_coeff = 1
+phys_bonus = 0
+attr_bonus = 0
+
+[soaring spin 1st hit]
+phys_coeff = 3.0135
+attr_coeff = 1
+phys_bonus = 371
+attr_bonus = 0
+
+[soaring spin 2nd hit]
+phys_coeff = 3.6831
+attr_coeff = 1
+phys_bonus = 454
+attr_bonus = 0
+
+[vagrant sword 1st hit]
+phys_coeff = 1.306
+phys_bonus = 229
+attr_coeff = 1.9589
+attr_bonus = 132
+
+[vagrant sword 2nd hit]
+phys_coeff = 1.5672
+phys_bonus = 275
+attr_coeff = 2.35
+attr_bonus = 158
+
+[vagrant sword 3rd hit]
+phys_coeff = 1.8283
+phys_bonus = 320
+attr_coeff = 2.7425
+attr_bonus = 185
+
+

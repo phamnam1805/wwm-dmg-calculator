@@ -1,0 +1,33 @@
+# Marginal gain options - each section is one equal-cost option
+# Specify only the stats that change, delta values (+ or -)
+# Supported keys: affinity_rate, precision_rate, critical_rate,
+#                 direct_affinity_rate, direct_critical_rate,
+#                 physical_max, physical_min,
+#                 <attribute_name>_max, <attribute_name>_min
+
+[+2.8% affinity]
+affinity_rate = +0.028
+
+[+5.6% precision]
+precision_rate = +0.056
+
+[+5.6% crit]
+critical_rate = +0.056
+
+[+47 max physical ATK]
+physical_max = +47
+
+[+47 min physical ATK]
+physical_min = +47
+
+[+31.33333 max bellstrike ATK]
+bellstrike_max = +31.33333
+
+[+31.33333 min silkbind ATK]
+silkbind_min = +31.33333
+
+[+31.33333 min stonesplit ATK]
+stonesplit_min = +31.33333
+
+[+31.33333 min bamboocut ATK]
+bamboocut_min = +31.33333
