@@ -28,6 +28,7 @@ ATTRIBUTES           = ("bellstrike", "stonesplit", "bamboocut", "silkbind")
 BASE_CONFIG          = "base.cnf"
 SKILL_FORMULAS_FILE  = "skill_formulas.cnf"
 MARGINAL_CONFIG      = "marginal.cnf"
+SKILL = "vagrant sword 3rd hit"
 
 AFFINITY_CAP         = 0.40
 DIRECT_AFFINITY_CAP  = 0.10
@@ -116,7 +117,7 @@ class CharStats:
     affinity_rate:        float
     precision_rate:       float
     critical_rate:        float
-    affinity_mult:        float = 1.402
+    affinity_mult:        float = 1.35
     critical_mult:        float = 1.50
     direct_affinity_rate: float = 0.0
     direct_critical_rate: float = 0.0
@@ -533,7 +534,7 @@ except FileNotFoundError as e:
 
 try:
     skill_formulas = load_skill_formulas(SKILL_FORMULAS_FILE)
-    active_formula = skill_formulas.get("vagrant sword 3rd hit", SkillFormula())
+    active_formula = skill_formulas.get(SKILL, SkillFormula())
     print(f"Skill formulas : {', '.join(skill_formulas)}  (active: {active_formula.name})")
 except FileNotFoundError:
     active_formula = SkillFormula()

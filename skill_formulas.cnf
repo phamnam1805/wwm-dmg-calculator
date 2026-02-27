@@ -41,4 +41,10 @@ phys_bonus = 320
 attr_coeff = 2.7425
 attr_bonus = 185
 
+[light attack 1st hit]
+phys_coeff = 0.3871
+phys_bonus = 68
+attr_coeff = 0.5807
+attr_bonus = 39
+
 
