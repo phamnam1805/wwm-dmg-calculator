@@ -37,46 +37,6 @@ CRIT_CAP             = 0.80
 DIRECT_CRIT_CAP      = 0.20
 PRECISION_CAP        = 1.00
 
-# ─────────────────────────────────────────────
-# Descriptions
-# ─────────────────────────────────────────────
-DESC_DAMAGE = """
-Damage types:
-  ORANGE  = affinity hit  -> dmg = total_max * affinity_mult  (highest, fixed)
-  YELLOW  = crit hit      -> dmg = roll(min,max) * crit_mult
-  WHITE   = normal hit    -> dmg = roll(min,max)
-  GRAY    = abrasion      -> dmg = total_min                  (lowest, fixed)
-
-Rates:
-  affinity_rate   cap 40%  + direct_affinity (cap 10%) => eff_affinity
-  precision_rate  cap 100% (miss = GRAY)
-  critical_rate   cap 80%  + direct_critical (cap 20%) => eff_crit
-  direct_*        bypass the normal cap but have their own cap
-
-Attribute DMG:
-  total = physical * phys_coeff + phys_bonus + (main_attr * 1.5 + others) * attr_coeff + attr_bonus
-  affinity dmg uses total_max, abrasion uses total_min
-
-Assumptions & limitations:
-  - Skill formula is read from skill_formulas.cnf
-    phys_bonus/attr_bonus: flat added before coeff (e.g. skill-specific flat dmg)
-    Examples: mystic skills have attr_coeff=0 (physical only)
-  - Physical and attribute penetration are NOT modeled
-    Results are pre-penetration dmg; scale accordingly
-"""
-
-DESC_STABILITY = """
-Stability stats (from simulation):
-  mean   average dmg over n rolls (should converge to theory E[DMG])
-  std    standard deviation - how much each hit deviates from mean
-           high std = swingy/inconsistent damage
-  min    lowest dmg rolled (usually GRAY = total_min)
-  max    highest dmg rolled (usually ORANGE = affinity dmg)
-  p10    10% of hits fall below this value
-  p90    90% of hits fall below this value
-           -> p10~p90 spread shows the practical damage range
-"""
-
 
 # ─────────────────────────────────────────────
 # Data classes
@@ -552,9 +512,6 @@ def print_marginal(base: CharStats, f: SkillFormula, opts: Dict[str, CharStats],
 # ─────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────
-print(DESC_DAMAGE)
-print(DESC_STABILITY)
-
 try:
     base = load_stats(BASE_CONFIG)
 except FileNotFoundError as e:
