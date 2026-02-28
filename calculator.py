@@ -67,9 +67,18 @@ class SkillFormula:
     name:        str   = "default"
     phys_coeff:  float = 1.0
     attr_coeff:  float = 1.0
-    phys_bonus:  float = 0.0   # added to physical before coeff
-    attr_bonus:  float = 0.0   # added to attribute before coeff
+    phys_bonus:  float = 0.0   # flat bonus, added after phys_coeff × atk
+    attr_bonus:  float = 0.0   # atk bonus, added to attr_atk before coeff
     is_mystic:   bool  = False  # mystic skills: no x1.5 on main attribute
+
+    def __post_init__(self):
+        if self.is_mystic:
+            self.attr_bonus = 0.0
+            self.attr_coeff = self.phys_coeff
+        else:
+            expected = self.phys_coeff * 1.5
+            if abs(self.attr_coeff - expected) > 0.01 * expected:
+                self.attr_coeff = expected  # enforce x1.5 on main attribute for non-mystic
 
 
 @dataclass
@@ -101,7 +110,7 @@ class CharStats:
 
     # ── damage components (formula-aware) ─────
     def _phys_max(self, f: SkillFormula) -> float:
-        return (self.physical.atk_max * f.phys_coeff + f.phys_bonus) * self.physical.dmg_mult()
+        return ( f.phys_coeff * self.physical.atk_max + f.phys_bonus) * self.physical.dmg_mult()
 
     def _phys_min(self, f: SkillFormula) -> float:
         return (self.physical.atk_min * f.phys_coeff + f.phys_bonus) * self.physical.dmg_mult()
@@ -115,37 +124,37 @@ class CharStats:
     def _attr_max(self, f: SkillFormula) -> float:
         total = 0.0
         for name, stat in self.attributes.items():
-            main = True if name == self.main_attribute else False
-            base_coeff = 1.0 if f.is_mystic else (1.5 if main else 1.0)
+            main = name == self.main_attribute
             attr_bonus = 0.0 if f.is_mystic else (f.attr_bonus if main else 0.0)
-            total += (base_coeff * f.attr_coeff * stat.atk_max + attr_bonus) * stat.dmg_mult()
+            attr_coeff = f.attr_coeff if main else f.phys_coeff
+            total += (attr_coeff * (stat.atk_max + attr_bonus)) * stat.dmg_mult()
         return total
 
     def _attr_min(self, f: SkillFormula) -> float:
         total = 0.0
         for name, stat in self.attributes.items():
             main = name == self.main_attribute
-            base_coeff = 1.0 if f.is_mystic else (1.5 if main else 1.0)
             attr_bonus = 0.0 if f.is_mystic else (f.attr_bonus if main else 0.0)
-            total += (base_coeff * f.attr_coeff * stat.atk_min + attr_bonus) * stat.dmg_mult()
+            attr_coeff = f.attr_coeff if main else f.phys_coeff
+            total += (attr_coeff * (stat.atk_min + attr_bonus)) * stat.dmg_mult()
         return total
 
     def _attr_e_roll(self, f: SkillFormula) -> float:
         total = 0.0
         for name, stat in self.attributes.items():
             main = name == self.main_attribute
-            base_coeff = 1.0 if f.is_mystic else (1.5 if main else 1.0)
             attr_bonus = 0.0 if f.is_mystic else (f.attr_bonus if main else 0.0)
-            total += (base_coeff * f.attr_coeff * stat.e_roll() + attr_bonus) * stat.dmg_mult()
+            attr_coeff = f.attr_coeff if main else f.phys_coeff
+            total += (attr_coeff * (stat.e_roll() + attr_bonus)) * stat.dmg_mult()
         return total
 
     def _attr_roll(self, rng: random.SystemRandom, f: SkillFormula) -> float:
         total = 0.0
         for name, stat in self.attributes.items():
             main = name == self.main_attribute
-            base_coeff = 1.0 if f.is_mystic else (1.5 if main else 1.0)
             attr_bonus = 0.0 if f.is_mystic else (f.attr_bonus if main else 0.0)
-            total += (base_coeff * f.attr_coeff * stat.roll(rng) + attr_bonus) * stat.dmg_mult()
+            attr_coeff = f.attr_coeff if main else f.phys_coeff
+            total += (attr_coeff * (stat.roll(rng) + attr_bonus)) * stat.dmg_mult()
         return total
 
     def total_max(self, f: SkillFormula) -> float:
@@ -187,8 +196,8 @@ class CharStats:
         var_roll = var_uni(self._phys_min(f), self._phys_max(f))
         for name, stat in self.attributes.items():
             main = name == self.main_attribute
-            base_coeff = 1.0 if f.is_mystic else (1.5 if main else 1.0)
-            m = base_coeff * f.attr_coeff * stat.dmg_mult()
+            attr_coeff = f.attr_coeff if main else f.phys_coeff
+            m = attr_coeff * stat.dmg_mult()
             var_roll += var_uni(stat.atk_min * m, stat.atk_max * m)
 
         e2_roll = var_roll + self.e_total_roll(f) ** 2
@@ -436,16 +445,24 @@ def print_stats(label: str, s: CharStats, f: SkillFormula,
 
     print(f"  Physical   : {s.physical.atk_min} - {s.physical.atk_max}{pen_tag(s.physical)}")
     for name, stat in s.attributes.items():
-        tag = " [MAIN x1.5]" if name == s.main_attribute else " [x1.0]"
+        if name == s.main_attribute:
+            tag = " [x1.0]" if f.is_mystic else " [MAIN x1.5]"
+        else:
+            tag = " [x1.0]"
         print(f"  {name:<12}: {stat.atk_min} - {stat.atk_max}{pen_tag(stat)}{tag}")
     print(f"  Affinity   : {s.affinity_rate*100:.1f}% + {s.direct_affinity_rate*100:.1f}% direct"
           f"  => eff {s.eff_affinity()*100:.2f}%  (mult x{s.affinity_mult})")
     print(f"  Precision  : {s.precision_rate*100:.1f}%  => eff {s.eff_precision()*100:.2f}%")
     print(f"  Crit rate  : {s.critical_rate*100:.1f}% + {s.direct_critical_rate*100:.1f}% direct"
           f"  => eff {s.eff_crit()*100:.2f}%  (mult x{s.critical_mult})")
-    mystic_tag = "  [MYSTIC: no x1.5 main attr]" if f.is_mystic else ""
-    print(f"  Skill      : {f.name}"
-          f"  (phys×{f.phys_coeff} +{f.phys_bonus}bonus  attr×{f.attr_coeff} +{f.attr_bonus}bonus){mystic_tag}")
+    if f.is_mystic:
+        formula_str = (f"phys_atk ×{f.phys_coeff} +{f.phys_bonus}flat"
+                       f"  +  attr_atk ×{f.phys_coeff}  [MYSTIC]")
+    else:
+        formula_str = (f"phy_atk ×{f.phys_coeff} +{f.phys_bonus}flat"
+                       f"  +  other_attr_atk ×{f.phys_coeff}"
+                       f"  +  (main_attr_atk+{f.attr_bonus})×{f.attr_coeff}")
+    print(f"  Skill      : {f.name}  ({formula_str})")
     print(f"  Total max  : {s.total_max(f):.1f}"
           f"  |  E[roll]: {s.e_total_roll(f):.1f}"
           f"  |  Min: {s.total_min(f):.1f}")

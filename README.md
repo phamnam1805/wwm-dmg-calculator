@@ -113,12 +113,13 @@ Each attribute is computed independently then summed:
 
 ```
 # Normal skill:
-attr_contribution = (1.5 * attr_coeff * main_attr_atk + attr_bonus) * main_attr.dmg_mult()
-                  + (1.0 * attr_coeff * other_attr_atk            ) * other_attr.dmg_mult()
+attr_contribution = attr_coeff × (main_attr_atk + attr_bonus) × main_attr.dmg_mult()
+                  + phys_coeff × other_attr_atk               × other_attr.dmg_mult()
+# attr_coeff = phys_coeff × 1.5  (enforced automatically)
+# attr_bonus is scaled by attr_coeff (added to atk before multiplication)
 
 # Mystic skill (is_mystic = true):
-attr_contribution = (1.0 * attr_coeff * attr_atk + attr_bonus) * attr.dmg_mult()
-                  # x1.5 removed for main attr; attr_bonus only on main attr
+attr_contribution = phys_coeff × attr_atk × attr.dmg_mult()   # same coeff for all attrs, attr_bonus = 0
 ```
 
 ### Total damage range
@@ -166,11 +167,11 @@ E[DMG] = P(orange) × total_max × affinity_mult
 
 ### Skill types
 
-| Type         | `phys_bonus` | main attr x1.5 | `attr_bonus` applies to |
-|--------------|:------------:|:--------------:|-------------------------|
-| Normal skill | yes          | yes            | main attr only          |
-| Mystic skill | yes          | **no**         | main attr only          |
-| DOT          | **no**       | **no**         | all attrs (x1.0)        |
+| Type         | `phys_bonus` | main attr ×1.5 | `attr_bonus` (scaled by `attr_coeff`) |
+|--------------|:------------:|:--------------:|---------------------------------------|
+| Normal skill | yes          | yes            | main attr only                        |
+| Mystic skill | yes          | **no**         | **none** (`attr_bonus` forced to 0)   |
+| DOT          | **no**       | **no**         | all attrs (×1.0)                      |
 
 ---
 
