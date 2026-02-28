@@ -432,7 +432,7 @@ def print_stats(label: str, s: CharStats, f: SkillFormula,
     def pen_tag(stat: AtkStat) -> str:
         if stat.pen == 0.0 and stat.dmg_bonus == 0.0:
             return ""
-        return f"  pen={stat.pen:.1f}  dmg_bonus={stat.dmg_bonus*100:.1f}%  => x{stat.dmg_mult():.4f}"
+        return f"  pen={stat.pen:.1f}  dmg_bonus={stat.dmg_bonus*100:.1f}%  (pen/dmg_bonus x{stat.dmg_mult():.4f})"
 
     print(f"  Physical   : {s.physical.atk_min} - {s.physical.atk_max}{pen_tag(s.physical)}")
     for name, stat in s.attributes.items():
@@ -535,20 +535,21 @@ def print_marginal(base: CharStats, f: SkillFormula, opts: Dict[str, CharStats],
             da = getattr(sa, key) - getattr(base, key)
             db = getattr(sb, key) - getattr(base, key)
             setattr(sc, key, getattr(base, key) + da + db)
-        sc.physical = AtkStat(
-            base.physical.atk_min + (sa.physical.atk_min - base.physical.atk_min)
-                                  + (sb.physical.atk_min - base.physical.atk_min),
-            base.physical.atk_max + (sa.physical.atk_max - base.physical.atk_max)
-                                  + (sb.physical.atk_max - base.physical.atk_max),
-        )
+        def combine(base_stat, sa_stat, sb_stat) -> AtkStat:
+            def d(field):
+                return (getattr(base_stat, field)
+                        + (getattr(sa_stat, field) - getattr(base_stat, field))
+                        + (getattr(sb_stat, field) - getattr(base_stat, field)))
+            return AtkStat(
+                atk_min   = d("atk_min"),
+                atk_max   = d("atk_max"),
+                pen       = d("pen"),
+                dmg_bonus = d("dmg_bonus"),
+            )
+        sc.physical = combine(base.physical, sa.physical, sb.physical)
         for attr in base.attributes:
-            sc.attributes[attr] = AtkStat(
-                base.attributes[attr].atk_min
-                    + (sa.attributes[attr].atk_min - base.attributes[attr].atk_min)
-                    + (sb.attributes[attr].atk_min - base.attributes[attr].atk_min),
-                base.attributes[attr].atk_max
-                    + (sa.attributes[attr].atk_max - base.attributes[attr].atk_max)
-                    + (sb.attributes[attr].atk_max - base.attributes[attr].atk_max),
+            sc.attributes[attr] = combine(
+                base.attributes[attr], sa.attributes[attr], sb.attributes[attr]
             )
         rc   = sc.expected_dmg(f)
         gain = rc["E[DMG]"] - base_e
@@ -556,11 +557,11 @@ def print_marginal(base: CharStats, f: SkillFormula, opts: Dict[str, CharStats],
         print(f"  {lbl:<52}  +{gain:.2f} DMG  (E={rc['E[DMG]']}  std={rc['std']})")
         pair_results.append((lbl, gain, rc["E[DMG]"], rc["std"]))
 
-    print(f"\n  Top 5:")
+    print(f"\n  Top 10:")
     print(f"  {'-'*66}")
     for rank, (lbl, g, e, std) in enumerate(
-            sorted(pair_results, key=lambda x: -x[1])[:5], 1):
-        print(f"  #{rank}  {lbl:<52}  +{g:.2f}  (E={e}  std={std})")
+            sorted(pair_results, key=lambda x: -x[1])[:10], 1):
+        print(f"  #{rank:<2}  {lbl:<52}  +{g:.2f}  (E={e}  std={std})")
 
 
 # ─────────────────────────────────────────────
