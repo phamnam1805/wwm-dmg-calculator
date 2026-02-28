@@ -7,22 +7,32 @@ main_attribute = bellstrike
 [physical]
 min = 665
 max = 1885
+pen = 5.1
+dmg_bonus = 0
 
 [attribute.bellstrike]
 min = 231
 max = 457
+pen = 41
+dmg_bonus = 0.066
 
 [attribute.stonesplit]
 min = 50
 max = 50
+pen = 0
+dmg_bonus = 0
 
 [attribute.bamboocut]
 min = 20
 max = 20
+pen = 0
+dmg_bonus = 0
 
 [attribute.silkbind]
 min = 0
 max = 26
+pen = 0
+dmg_bonus = 0
 
 [rates]
 affinity_rate        = 0.374
