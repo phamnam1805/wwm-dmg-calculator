@@ -24,11 +24,12 @@ from typing import Dict, Optional
 # Constants
 # ─────────────────────────────────────────────
 ATTRIBUTES           = ("bellstrike", "stonesplit", "bamboocut", "silkbind")
-# BASE_CONFIG          = "pinda-stats.cnf"
 BASE_CONFIG          = "base.cnf"
 SKILL_FORMULAS_FILE  = "skill_formulas.cnf"
 MARGINAL_CONFIG      = "marginal.cnf"
-SKILL = "vagrant sword 3rd hit"
+# SKILL = "soaring spin 1st hit"
+SKILL = "soaring spin 2nd hit"
+# SKILL = "vagrant sword 3rd hit"
 
 AFFINITY_CAP         = 0.40
 DIRECT_AFFINITY_CAP  = 0.10
@@ -103,6 +104,7 @@ class SkillFormula:
     attr_coeff:  float = 1.0
     phys_bonus:  float = 0.0   # added to physical before coeff
     attr_bonus:  float = 0.0   # added to attribute before coeff
+    is_mystic:   bool  = False  # mystic skills: no x1.5 on main attribute
 
 
 @dataclass
@@ -145,30 +147,36 @@ class CharStats:
     def _phys_roll(self, rng: random.SystemRandom, f: SkillFormula) -> float:
         return self.physical.roll(rng) * f.phys_coeff + f.phys_bonus
 
+    def _main_mult(self, f: SkillFormula, name: str) -> float:
+        """x1.5 for main attribute, unless mystic skill (always x1.0)."""
+        if f.is_mystic:
+            return 1.0
+        return 1.5 if name == self.main_attribute else 1.0
+
     def _attr_max(self, f: SkillFormula) -> float:
         total = sum(
-            stat.atk_max * (1.5 if name == self.main_attribute else 1.0)
+            stat.atk_max * self._main_mult(f, name)
             for name, stat in self.attributes.items()
         )
         return total * f.attr_coeff + f.attr_bonus
 
     def _attr_min(self, f: SkillFormula) -> float:
         total = sum(
-            stat.atk_min * (1.5 if name == self.main_attribute else 1.0)
+            stat.atk_min * self._main_mult(f, name)
             for name, stat in self.attributes.items()
         )
         return total * f.attr_coeff + f.attr_bonus
 
     def _attr_e_roll(self, f: SkillFormula) -> float:
         total = sum(
-            stat.e_roll() * (1.5 if name == self.main_attribute else 1.0)
+            stat.e_roll() * self._main_mult(f, name)
             for name, stat in self.attributes.items()
         )
         return total * f.attr_coeff + f.attr_bonus
 
     def _attr_roll(self, rng: random.SystemRandom, f: SkillFormula) -> float:
         total = sum(
-            stat.roll(rng) * (1.5 if name == self.main_attribute else 1.0)
+            stat.roll(rng) * self._main_mult(f, name)
             for name, stat in self.attributes.items()
         )
         return total * f.attr_coeff + f.attr_bonus
@@ -211,7 +219,7 @@ class CharStats:
 
         var_roll = var_uni(self._phys_min(f), self._phys_max(f))
         for name, stat in self.attributes.items():
-            m = (1.5 if name == self.main_attribute else 1.0) * f.attr_coeff
+            m = self._main_mult(f, name) * f.attr_coeff
             var_roll += var_uni(stat.atk_min * m, stat.atk_max * m)
 
         e2_roll = var_roll + self.e_total_roll(f) ** 2
@@ -238,30 +246,34 @@ class CharStats:
         """Monte Carlo simulation using /dev/urandom (SystemRandom)."""
         rng = random.SystemRandom()
         a, p, c = self.eff_affinity(), self.eff_precision(), self.eff_crit()
-        counts  = {"orange": 0, "yellow": 0, "white": 0, "gray": 0}
-        dmg_log = []
+        counts   = {"orange": 0, "yellow": 0, "white": 0, "gray": 0}
+        dmg_sum  = {"orange": 0.0, "yellow": 0.0, "white": 0.0, "gray": 0.0}
+        dmg_log  = []
 
         for _ in range(n_rolls):
             if rng.random() < a:
-                dmg = self.total_max(f) * self.affinity_mult
-                counts["orange"] += 1
+                dmg   = self.total_max(f) * self.affinity_mult
+                color = "orange"
             elif rng.random() >= p:
-                dmg = self.total_min(f)
-                counts["gray"] += 1
+                dmg   = self.total_min(f)
+                color = "gray"
             else:
                 roll = self.total_roll(rng, f)
                 if rng.random() < c:
-                    dmg = roll * self.critical_mult
-                    counts["yellow"] += 1
+                    dmg   = roll * self.critical_mult
+                    color = "yellow"
                 else:
-                    dmg = roll
-                    counts["white"] += 1
+                    dmg   = roll
+                    color = "white"
+            counts[color]  += 1
+            dmg_sum[color] += dmg
             dmg_log.append(dmg)
 
         dmg_log.sort()
-        n    = len(dmg_log)
-        mean = sum(dmg_log) / n
-        std  = (sum((x - mean) ** 2 for x in dmg_log) / n) ** 0.5
+        n     = len(dmg_log)
+        mean  = sum(dmg_log) / n
+        std   = (sum((x - mean) ** 2 for x in dmg_log) / n) ** 0.5
+        total = sum(dmg_log)
 
         def pct(q): return dmg_log[int(q / 100 * n)]
 
@@ -272,10 +284,15 @@ class CharStats:
             "max":        round(dmg_log[-1], 2),
             "p10":        round(pct(10), 2),
             "p90":        round(pct(90), 2),
+            "total":      round(total, 2),
             "P_orange":   round(counts["orange"] / n * 100, 2),
             "P_yellow":   round(counts["yellow"] / n * 100, 2),
             "P_white":    round(counts["white"]  / n * 100, 2),
             "P_gray":     round(counts["gray"]   / n * 100, 2),
+            "total_orange": round(dmg_sum["orange"], 2),
+            "total_yellow": round(dmg_sum["yellow"], 2),
+            "total_white":  round(dmg_sum["white"],  2),
+            "total_gray":   round(dmg_sum["gray"],   2),
         }
 
 
@@ -307,7 +324,7 @@ def load_stats(path: str) -> CharStats:
         affinity_rate        = float(r["affinity_rate"]),
         precision_rate       = float(r["precision_rate"]),
         critical_rate        = float(r["critical_rate"]),
-        affinity_mult        = float(r.get("affinity_mult",        "1.402")),
+        affinity_mult        = float(r.get("affinity_mult",        "1.35")),
         critical_mult        = float(r.get("critical_mult",        "1.5")),
         direct_affinity_rate = float(r.get("direct_affinity_rate", "0.0")),
         direct_critical_rate = float(r.get("direct_critical_rate", "0.0")),
@@ -353,6 +370,7 @@ def load_skill_formulas(path: str) -> Dict[str, SkillFormula]:
             attr_coeff  = float(cfg[name].get("attr_coeff",  "1.0")),
             phys_bonus  = float(cfg[name].get("phys_bonus",  "0")),
             attr_bonus  = float(cfg[name].get("attr_bonus",  "0")),
+            is_mystic   = cfg[name].get("is_mystic", "false").strip().lower() == "true",
         )
         for name in cfg.sections()
     }
@@ -417,8 +435,9 @@ def print_stats(label: str, s: CharStats, f: SkillFormula,
     print(f"  Precision  : {s.precision_rate*100:.1f}%  => eff {s.eff_precision()*100:.2f}%")
     print(f"  Crit rate  : {s.critical_rate*100:.1f}% + {s.direct_critical_rate*100:.1f}% direct"
           f"  => eff {s.eff_crit()*100:.2f}%  (mult x{s.critical_mult})")
+    mystic_tag = "  [MYSTIC: no x1.5 main attr]" if f.is_mystic else ""
     print(f"  Skill      : {f.name}"
-          f"  (phys×{f.phys_coeff} +{f.phys_bonus}bonus  attr×{f.attr_coeff} +{f.attr_bonus}bonus)")
+          f"  (phys×{f.phys_coeff} +{f.phys_bonus}bonus  attr×{f.attr_coeff} +{f.attr_bonus}bonus){mystic_tag}")
     print(f"  Total max  : {s.total_max(f):.1f}"
           f"  |  E[roll]: {s.e_total_roll(f):.1f}"
           f"  |  Min: {s.total_min(f):.1f}")
@@ -463,6 +482,15 @@ def print_stats(label: str, s: CharStats, f: SkillFormula,
             tv = r[tk] if tk else "—"
             sv = sim[sk]
             print(f"  {lbl:<15}  {str(tv):>10}  {sv:>10}")
+
+        total = sim["total"]
+        print(f"\n  Total damage over {n_rolls} hits = {total:.0f}")
+        print(f"  {'color':<8}  {'total dmg':>10}  {'% of total':>10}")
+        print(f"  {'-'*32}")
+        for color in ("orange", "yellow", "white", "gray"):
+            cdmg = sim[f"total_{color}"]
+            pct  = cdmg / total * 100 if total > 0 else 0
+            print(f"  {color:<8}  {cdmg:>10.0f}  {pct:>9.1f}%")
 
 
 def print_marginal(base: CharStats, f: SkillFormula, opts: Dict[str, CharStats], verbose: bool = False):
@@ -543,6 +571,23 @@ except FileNotFoundError:
 args    = sys.argv[1:]
 verbose = "-v" in args
 args    = [a for a in args if a != "-v"]
+
+# -s <skill_name> to select formula
+skill_name = None
+if "-s" in args:
+    idx = args.index("-s")
+    if idx + 1 < len(args):
+        skill_name = args[idx + 1]
+        args = [a for i, a in enumerate(args) if i not in (idx, idx + 1)]
+    else:
+        print("Error: -s requires a skill name"); sys.exit(1)
+
+if skill_name:
+    if skill_name not in skill_formulas:
+        print(f"Error: skill '{skill_name}' not found. Available: {', '.join(skill_formulas)}")
+        sys.exit(1)
+    active_formula = skill_formulas[skill_name]
+    print(f"Active formula : {active_formula.name}")
 
 if args:
     try:

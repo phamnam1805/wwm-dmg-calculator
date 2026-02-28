@@ -19,9 +19,10 @@ attr_bonus = 0
 
 [soaring spin 2nd hit]
 phys_coeff = 3.6831
-attr_coeff = 1
 phys_bonus = 454
+attr_coeff = 1
 attr_bonus = 0
+is_mystic = true
 
 [vagrant sword 1st hit]
 phys_coeff = 1.306

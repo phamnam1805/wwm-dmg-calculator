@@ -1,0 +1,34 @@
+# WWM Character Stats Config
+# Lines starting with # are comments
+
+[character]
+main_attribute = bellstrike
+
+[physical]
+min = 665
+max = 1806
+
+[attribute.bellstrike]
+min = 231
+max = 482
+
+[attribute.stonesplit]
+min = 50
+max = 50
+
+[attribute.bamboocut]
+min = 20
+max = 20
+
+[attribute.silkbind]
+min = 0
+max = 0
+
+[rates]
+affinity_rate        = 0.388
+precision_rate       = 0.942
+critical_rate        = 0.38
+affinity_mult        = 1.402
+critical_mult        = 1.5
+direct_affinity_rate = 0.023
+direct_critical_rate = 0.046

@@ -1,0 +1,6 @@
+[attribute.bellstrike]
+min = 231
+max = 457
+
+[rates]
+precision_rate       = 0.986

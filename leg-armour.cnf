@@ -1,0 +1,12 @@
+[physical]
+min = 665
+max = 1906
+
+[attribute.bellstrike]
+min = 253
+max = 457
+
+[rates]
+affinity_rate        = 0.358
+precision_rate       = 0.98
+critical_rate        = 0.338
