@@ -31,3 +31,15 @@ stonesplit_min = +31.33333
 
 [+31.33333 min bamboocut ATK]
 bamboocut_min = +31.33333
+
+[+8 physical penenetration]
+physical_pen = +8
+
+[+1% physical DMG bonus]
+physical_dmg_bonus = 0.01
+
+[+8 bellstrike penenetration]
+bellstrike_pen = +8
+
+[+1% bellstrike DMG bonus]
+bellstrike_dmg_bonus = 0.01

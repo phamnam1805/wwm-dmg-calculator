@@ -28,8 +28,8 @@ BASE_CONFIG          = "base.cnf"
 SKILL_FORMULAS_FILE  = "skill_formulas.cnf"
 MARGINAL_CONFIG      = "marginal.cnf"
 # SKILL = "soaring spin 1st hit"
-SKILL = "soaring spin 2nd hit"
-# SKILL = "vagrant sword 3rd hit"
+# SKILL = "soaring spin 2nd hit"
+SKILL = "vagrant sword 3rd hit"
 
 AFFINITY_CAP         = 0.40
 DIRECT_AFFINITY_CAP  = 0.10
@@ -43,8 +43,13 @@ PRECISION_CAP        = 1.00
 # ─────────────────────────────────────────────
 @dataclass
 class AtkStat:
-    atk_min: float
-    atk_max: float
+    atk_min:   float
+    atk_max:   float
+    pen:       float = 0.0   # penetration
+    dmg_bonus: float = 0.0   # damage bonus (additive %)
+
+    def dmg_mult(self) -> float:
+        return (1 + self.pen / 200) * (1 + self.dmg_bonus)
 
     def __post_init__(self):
         if self.atk_max < self.atk_min:
@@ -96,50 +101,52 @@ class CharStats:
 
     # ── damage components (formula-aware) ─────
     def _phys_max(self, f: SkillFormula) -> float:
-        return self.physical.atk_max * f.phys_coeff + f.phys_bonus
+        return (self.physical.atk_max * f.phys_coeff + f.phys_bonus) * self.physical.dmg_mult()
 
     def _phys_min(self, f: SkillFormula) -> float:
-        return self.physical.atk_min * f.phys_coeff + f.phys_bonus
+        return (self.physical.atk_min * f.phys_coeff + f.phys_bonus) * self.physical.dmg_mult()
 
     def _phys_e_roll(self, f: SkillFormula) -> float:
-        return self.physical.e_roll() * f.phys_coeff + f.phys_bonus
+        return (self.physical.e_roll() * f.phys_coeff + f.phys_bonus) * self.physical.dmg_mult()
 
     def _phys_roll(self, rng: random.SystemRandom, f: SkillFormula) -> float:
-        return self.physical.roll(rng) * f.phys_coeff + f.phys_bonus
-
-    def _main_mult(self, f: SkillFormula, name: str) -> float:
-        """x1.5 for main attribute, unless mystic skill (always x1.0)."""
-        if f.is_mystic:
-            return 1.0
-        return 1.5 if name == self.main_attribute else 1.0
+        return (self.physical.roll(rng) * f.phys_coeff + f.phys_bonus) * self.physical.dmg_mult()
 
     def _attr_max(self, f: SkillFormula) -> float:
-        total = sum(
-            stat.atk_max * self._main_mult(f, name)
-            for name, stat in self.attributes.items()
-        )
-        return total * f.attr_coeff + f.attr_bonus
+        total = 0.0
+        for name, stat in self.attributes.items():
+            main = True if name == self.main_attribute else False
+            base_coeff = 1.0 if f.is_mystic else (1.5 if main else 1.0)
+            attr_bonus = 0.0 if f.is_mystic else (f.attr_bonus if main else 0.0)
+            total += (base_coeff * f.attr_coeff * stat.atk_max + attr_bonus) * stat.dmg_mult()
+        return total
 
     def _attr_min(self, f: SkillFormula) -> float:
-        total = sum(
-            stat.atk_min * self._main_mult(f, name)
-            for name, stat in self.attributes.items()
-        )
-        return total * f.attr_coeff + f.attr_bonus
+        total = 0.0
+        for name, stat in self.attributes.items():
+            main = name == self.main_attribute
+            base_coeff = 1.0 if f.is_mystic else (1.5 if main else 1.0)
+            attr_bonus = 0.0 if f.is_mystic else (f.attr_bonus if main else 0.0)
+            total += (base_coeff * f.attr_coeff * stat.atk_min + attr_bonus) * stat.dmg_mult()
+        return total
 
     def _attr_e_roll(self, f: SkillFormula) -> float:
-        total = sum(
-            stat.e_roll() * self._main_mult(f, name)
-            for name, stat in self.attributes.items()
-        )
-        return total * f.attr_coeff + f.attr_bonus
+        total = 0.0
+        for name, stat in self.attributes.items():
+            main = name == self.main_attribute
+            base_coeff = 1.0 if f.is_mystic else (1.5 if main else 1.0)
+            attr_bonus = 0.0 if f.is_mystic else (f.attr_bonus if main else 0.0)
+            total += (base_coeff * f.attr_coeff * stat.e_roll() + attr_bonus) * stat.dmg_mult()
+        return total
 
     def _attr_roll(self, rng: random.SystemRandom, f: SkillFormula) -> float:
-        total = sum(
-            stat.roll(rng) * self._main_mult(f, name)
-            for name, stat in self.attributes.items()
-        )
-        return total * f.attr_coeff + f.attr_bonus
+        total = 0.0
+        for name, stat in self.attributes.items():
+            main = name == self.main_attribute
+            base_coeff = 1.0 if f.is_mystic else (1.5 if main else 1.0)
+            attr_bonus = 0.0 if f.is_mystic else (f.attr_bonus if main else 0.0)
+            total += (base_coeff * f.attr_coeff * stat.roll(rng) + attr_bonus) * stat.dmg_mult()
+        return total
 
     def total_max(self, f: SkillFormula) -> float:
         return self._phys_max(f) + self._attr_max(f)
@@ -179,7 +186,9 @@ class CharStats:
 
         var_roll = var_uni(self._phys_min(f), self._phys_max(f))
         for name, stat in self.attributes.items():
-            m = self._main_mult(f, name) * f.attr_coeff
+            main = name == self.main_attribute
+            base_coeff = 1.0 if f.is_mystic else (1.5 if main else 1.0)
+            m = base_coeff * f.attr_coeff * stat.dmg_mult()
             var_roll += var_uni(stat.atk_min * m, stat.atk_max * m)
 
         e2_roll = var_roll + self.e_total_roll(f) ** 2
@@ -190,16 +199,20 @@ class CharStats:
         std = (e_x2 - e_dmg ** 2) ** 0.5
 
         return {
-            "E[DMG]":     round(e_dmg, 2),
-            "std":        round(std, 2),
-            "P_orange":   round(prob_orange * 100, 2),
-            "P_yellow":   round(prob_yellow * 100, 2),
-            "P_white":    round(prob_white  * 100, 2),
-            "P_gray":     round(prob_gray   * 100, 2),
-            "DMG_orange": round(dmg_orange, 2),
-            "DMG_yellow": round(dmg_yellow, 2),
-            "DMG_white":  round(dmg_white,  2),
-            "DMG_gray":   round(dmg_gray,   2),
+            "E[DMG]":         round(e_dmg, 2),
+            "std":            round(std, 2),
+            "P_orange":       round(prob_orange * 100, 2),
+            "P_yellow":       round(prob_yellow * 100, 2),
+            "P_white":        round(prob_white  * 100, 2),
+            "P_gray":         round(prob_gray   * 100, 2),
+            "DMG_orange":     round(dmg_orange, 2),
+            "DMG_yellow":     round(dmg_yellow, 2),
+            "DMG_yellow_min": round(dmg_gray   * cm, 2),
+            "DMG_yellow_max": round(dmg_orange / am * cm, 2),
+            "DMG_white":      round(dmg_white,  2),
+            "DMG_white_min":  round(dmg_gray,   2),
+            "DMG_white_max":  round(dmg_orange / am, 2),
+            "DMG_gray":       round(dmg_gray,   2),
         }
 
     def simulate(self, f: SkillFormula, n_rolls: int = 70) -> dict:
@@ -270,12 +283,24 @@ def _cfg(path: str) -> configparser.ConfigParser:
 def load_stats(path: str) -> CharStats:
     cfg       = _cfg(path)
     main_attr = cfg["character"]["main_attribute"].strip()
-    physical  = AtkStat(float(cfg["physical"]["min"]), float(cfg["physical"]["max"]))
+    p = cfg["physical"]
+    physical  = AtkStat(
+        atk_min   = float(p["min"]),
+        atk_max   = float(p["max"]),
+        pen       = float(p.get("pen",       "0.0")),
+        dmg_bonus = float(p.get("dmg_bonus", "0.0")),
+    )
     attributes = {}
     for attr in ATTRIBUTES:
         sec = f"attribute.{attr}"
         if sec in cfg:
-            attributes[attr] = AtkStat(float(cfg[sec]["min"]), float(cfg[sec]["max"]))
+            s = cfg[sec]
+            attributes[attr] = AtkStat(
+                atk_min   = float(s["min"]),
+                atk_max   = float(s["max"]),
+                pen       = float(s.get("pen",       "0.0")),
+                dmg_bonus = float(s.get("dmg_bonus", "0.0")),
+            )
     r = cfg["rates"]
     return CharStats(
         physical             = physical,
@@ -300,16 +325,20 @@ def apply_override(base: CharStats, path: str) -> CharStats:
     if "physical" in cfg:
         p = cfg["physical"]
         s.physical = AtkStat(
-            float(p.get("min", base.physical.atk_min)),
-            float(p.get("max", base.physical.atk_max)),
+            atk_min   = float(p.get("min",       base.physical.atk_min)),
+            atk_max   = float(p.get("max",       base.physical.atk_max)),
+            pen       = float(p.get("pen",       base.physical.pen)),
+            dmg_bonus = float(p.get("dmg_bonus", base.physical.dmg_bonus)),
         )
     for attr in ATTRIBUTES:
         sec = f"attribute.{attr}"
         if sec in cfg:
             b = base.attributes.get(attr, AtkStat(0, 0))
             s.attributes[attr] = AtkStat(
-                float(cfg[sec].get("min", b.atk_min)),
-                float(cfg[sec].get("max", b.atk_max)),
+                atk_min   = float(cfg[sec].get("min",       b.atk_min)),
+                atk_max   = float(cfg[sec].get("max",       b.atk_max)),
+                pen       = float(cfg[sec].get("pen",       b.pen)),
+                dmg_bonus = float(cfg[sec].get("dmg_bonus", b.dmg_bonus)),
             )
     if "rates" in cfg:
         r = cfg["rates"]
@@ -341,7 +370,8 @@ def load_marginal_opts(path: str, base: CharStats) -> Dict[str, CharStats]:
     Each section = one equal-cost option. Values are deltas (+/-).
     Supported keys: affinity_rate, precision_rate, critical_rate,
                     direct_affinity_rate, direct_critical_rate,
-                    physical_min, physical_max, <attr>_min, <attr>_max
+                    physical_min, physical_max, physical_pen, physical_dmg_bonus,
+                    <attr>_min, <attr>_max, <attr>_pen, <attr>_dmg_bonus
     """
     cfg = _cfg(path)
 
@@ -353,24 +383,37 @@ def load_marginal_opts(path: str, base: CharStats) -> Dict[str, CharStats]:
                        "affinity_mult", "critical_mult"):
                 setattr(s, key, getattr(s, key) + delta)
             elif key == "physical_min":
-                s.physical = AtkStat(s.physical.atk_min + delta, s.physical.atk_max)
+                s.physical = AtkStat(s.physical.atk_min + delta, s.physical.atk_max, s.physical.pen, s.physical.dmg_bonus)
             elif key == "physical_max":
-                s.physical = AtkStat(s.physical.atk_min, s.physical.atk_max + delta)
+                s.physical = AtkStat(s.physical.atk_min, s.physical.atk_max + delta, s.physical.pen, s.physical.dmg_bonus)
+            elif key == "physical_pen":
+                s.physical = AtkStat(s.physical.atk_min, s.physical.atk_max, s.physical.pen + delta, s.physical.dmg_bonus)
+            elif key == "physical_dmg_bonus":
+                s.physical = AtkStat(s.physical.atk_min, s.physical.atk_max, s.physical.pen, s.physical.dmg_bonus + delta)
             else:
                 for attr in ATTRIBUTES:
                     if key == f"{attr}_min":
                         o = s.attributes[attr]
-                        s.attributes[attr] = AtkStat(o.atk_min + delta, o.atk_max)
+                        s.attributes[attr] = AtkStat(o.atk_min + delta, o.atk_max, o.pen, o.dmg_bonus)
                         break
                     elif key == f"{attr}_max":
                         o = s.attributes[attr]
-                        s.attributes[attr] = AtkStat(o.atk_min, o.atk_max + delta)
+                        s.attributes[attr] = AtkStat(o.atk_min, o.atk_max + delta, o.pen, o.dmg_bonus)
+                        break
+                    elif key == f"{attr}_pen":
+                        o = s.attributes[attr]
+                        s.attributes[attr] = AtkStat(o.atk_min, o.atk_max, o.pen + delta, o.dmg_bonus)
+                        break
+                    elif key == f"{attr}_dmg_bonus":
+                        o = s.attributes[attr]
+                        s.attributes[attr] = AtkStat(o.atk_min, o.atk_max, o.pen, o.dmg_bonus + delta)
                         break
 
     opts = {}
     for name in cfg.sections():
         s = deepcopy(base)
         apply_deltas(s, cfg[name].items())
+        # print(s)
         opts[name] = s
     return opts
 
@@ -386,10 +429,15 @@ def print_stats(label: str, s: CharStats, f: SkillFormula,
     print(f"\n{SEP}")
     print(f"  {label}")
     print(SEP)
-    print(f"  Physical   : {s.physical.atk_min} - {s.physical.atk_max}")
+    def pen_tag(stat: AtkStat) -> str:
+        if stat.pen == 0.0 and stat.dmg_bonus == 0.0:
+            return ""
+        return f"  pen={stat.pen:.1f}  dmg_bonus={stat.dmg_bonus*100:.1f}%  => x{stat.dmg_mult():.4f}"
+
+    print(f"  Physical   : {s.physical.atk_min} - {s.physical.atk_max}{pen_tag(s.physical)}")
     for name, stat in s.attributes.items():
         tag = " [MAIN x1.5]" if name == s.main_attribute else " [x1.0]"
-        print(f"  {name:<12}: {stat.atk_min} - {stat.atk_max}{tag}")
+        print(f"  {name:<12}: {stat.atk_min} - {stat.atk_max}{pen_tag(stat)}{tag}")
     print(f"  Affinity   : {s.affinity_rate*100:.1f}% + {s.direct_affinity_rate*100:.1f}% direct"
           f"  => eff {s.eff_affinity()*100:.2f}%  (mult x{s.affinity_mult})")
     print(f"  Precision  : {s.precision_rate*100:.1f}%  => eff {s.eff_precision()*100:.2f}%")
@@ -414,17 +462,23 @@ def print_stats(label: str, s: CharStats, f: SkillFormula,
     if sim:
         print(f"  E[DMG]  sim    = {sim['E[DMG]_sim']}  std={sim['std']}  (n={n_rolls})")
 
-    hdr = f"  {'Type':<8}  {'DMG value':>10}  {'Theory%':>8}"
-    div = f"  {'-'*30}"
+    hdr = f"  {'Type':<8}  {'avg DMG':>10}  {'range':>22}  {'hits% (theory)':>14}"
+    div = f"  {'-'*58}"
     if sim:
-        hdr += f"  {'Simulated%':>10}"
-        div += "-" * 13
+        hdr += f"  {'hits% (sim)':>11}"
+        div += "-" * 14
     print(hdr); print(div)
+    ranges = {
+        "orange": "fixed",
+        "yellow": f"{r['DMG_yellow_min']:.0f} ~ {r['DMG_yellow_max']:.0f}",
+        "white":  f"{r['DMG_white_min']:.0f} ~ {r['DMG_white_max']:.0f}",
+        "gray":   "fixed",
+    }
     for key, dmg_key in [("orange","DMG_orange"),("yellow","DMG_yellow"),
                          ("white","DMG_white"),("gray","DMG_gray")]:
-        row = f"  {key:<8}  {r[dmg_key]:>10.2f}  {r[f'P_{key}']:>7.2f}%"
+        row = f"  {key:<8}  {r[dmg_key]:>10.2f}  {ranges[key]:>22}  {r[f'P_{key}']:>13.2f}%"
         if sim:
-            row += f"  {sim[f'P_{key}']:>9.2f}%"
+            row += f"  {sim[f'P_{key}']:>10.2f}%"
         print(row)
 
     if sim:
