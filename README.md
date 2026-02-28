@@ -201,7 +201,16 @@ E[DMG] = P(orange) × total_max × affinity_mult
 
 ## Notes
 
-- Target defense and damage boost multipliers (增伤) are **not modeled**
+The following modifiers are **not modeled** and must be accounted for manually:
+
+- Target defense
+- Damage boost multipliers (增伤) in general, including:
+  - All Martial Art Skill DMG Boost
+  - Specified Weapon Martial Art Boost
+  - Mystic Skill DMG Boost
+  - DMG Boost vs Boss Units
+  - PvP Boost
 - **DOT damage** (bleed, burn, etc.) uses a different formula — no `phys_bonus`, no x1.5 on main attr — not supported yet
 - **Healer damage** follows a separate formula — not supported
-- Simulation uses `/dev/urandom` (SystemRandom)
+
+Simulation uses `/dev/urandom` (SystemRandom)
