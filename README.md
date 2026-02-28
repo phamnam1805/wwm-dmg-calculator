@@ -1,28 +1,28 @@
 # WWM Damage Calculator
 
-Công cụ tính damage cho game **Where Winds Meet**.
+Damage calculator for **Where Winds Meet**.
 
-## Cách dùng
+## Usage
 
 ```bash
-python calculator.py                    # stats hiện tại + active skill
-python calculator.py change.cnf         # so sánh base vs override
-python calculator.py -s "skill name"    # chọn skill formula
-python calculator.py change.cnf -v      # kèm double marginal gain
+python calculator.py                    # current stats + active skill
+python calculator.py change.cnf         # compare base vs override
+python calculator.py -s "skill name"    # select skill formula
+python calculator.py change.cnf -v      # include double marginal gain
 ```
 
 ## Config files
 
-| File                | Mô tả                                      |
-|---------------------|--------------------------------------------|
-| `base.cnf`          | Stats nhân vật                             |
-| `skill_formulas.cnf`| Công thức damage của từng skill            |
-| `marginal.cnf`      | Các option upgrade ngang giá để so sánh   |
+| File                 | Description                              |
+|----------------------|------------------------------------------|
+| `base.cnf`           | Character stats                          |
+| `skill_formulas.cnf` | Damage formula for each skill            |
+| `marginal.cnf`       | Equal-cost upgrade options to compare    |
 
-Override files (partial stats, áp đè lên base):
-`affi.cnf`, `crit.cnf`, `prec.cnf`, `phys.cnf`, `bellstrike.cnf`, `bamboocut.cnf`, `pendant.cnf`, v.v.
+Override files (partial stats applied on top of base):
+`affi.cnf`, `crit.cnf`, `prec.cnf`, `phys.cnf`, `bellstrike.cnf`, `bamboocut.cnf`, `pendant.cnf`, etc.
 
-## Công thức damage
+## Damage Formula
 
 ### Raw damage
 
@@ -30,14 +30,14 @@ Override files (partial stats, áp đè lên base):
 phys_dmg = physical_atk * phys_coeff + phys_bonus
 
 attr_dmg = (main_attr * 1.5 + Σ other_attrs) * attr_coeff + attr_bonus
-         # mystic skill: main_attr * 1.0 (không có x1.5)
+         # mystic skill: main_attr * 1.0 (no x1.5 bonus)
 
 total_max = phys_max + attr_max
 total_min = phys_min + attr_min
 E[roll]   = (total_min + total_max) / 2
 ```
 
-### Effective rates (sau cap)
+### Effective rates (after cap)
 
 ```
 eff_affinity  = min(affinity_rate,  40%) + min(direct_affinity, 10%)
@@ -45,7 +45,7 @@ eff_precision = min(precision_rate, 100%)
 eff_crit      = min(crit_rate,      80%) + min(direct_crit,     20%)
 ```
 
-### Xác suất từng loại hit
+### Hit type probabilities
 
 ```
 P(orange) = eff_affinity
@@ -54,14 +54,14 @@ P(white)  = (1 - eff_affinity) * eff_precision * (1 - eff_crit)
 P(gray)   = (1 - eff_affinity) * (1 - eff_precision)
 ```
 
-### Damage từng loại hit
+### Damage per hit type
 
-| Màu    | Tên       | Damage                         | Ghi chú              |
-|--------|-----------|--------------------------------|----------------------|
-| ORANGE | affinity  | `total_max × affinity_mult`    | fixed, luôn là max   |
-| YELLOW | crit      | `roll(min, max) × crit_mult`   | random               |
-| WHITE  | normal    | `roll(min, max)`               | random               |
-| GRAY   | abrasion  | `total_min`                    | fixed, luôn là min   |
+| Color  | Type     | Damage                         | Notes               |
+|--------|----------|--------------------------------|---------------------|
+| ORANGE | affinity | `total_max × affinity_mult`    | fixed, always max   |
+| YELLOW | crit     | `roll(min, max) × crit_mult`   | random              |
+| WHITE  | normal   | `roll(min, max)`               | random              |
+| GRAY   | abrasion | `total_min`                    | fixed, always min   |
 
 ### Expected damage
 
@@ -72,16 +72,16 @@ E[DMG] = P(orange) × total_max × affinity_mult
        + P(gray)   × total_min
 ```
 
-## Stability stats (từ simulation)
+## Stability stats (from simulation)
 
-| Stat  | Ý nghĩa                                                  |
-|-------|----------------------------------------------------------|
-| mean  | Trung bình damage qua n lần (converge về E[DMG] lý thuyết) |
-| std   | Độ lệch chuẩn — std cao = damage không ổn định           |
-| min   | Damage thấp nhất (thường là GRAY = total_min)            |
-| max   | Damage cao nhất (thường là ORANGE = affinity dmg)        |
-| p10   | 10% số hit thấp hơn giá trị này                         |
-| p90   | 90% số hit thấp hơn giá trị này (p10~p90 = practical range) |
+| Stat | Description                                                        |
+|------|--------------------------------------------------------------------|
+| mean | Average damage over n rolls (converges to theoretical E[DMG])      |
+| std  | Standard deviation — high std means inconsistent/swingy damage     |
+| min  | Lowest damage rolled (usually GRAY = total_min)                    |
+| max  | Highest damage rolled (usually ORANGE = affinity dmg)              |
+| p10  | 10% of hits fall below this value                                  |
+| p90  | 90% of hits fall below this value (p10~p90 = practical range)      |
 
 ## Attributes
 
@@ -89,13 +89,13 @@ E[DMG] = P(orange) × total_max × affinity_mult
 
 ## Rate caps
 
-| Rate              | Cap thường | Cap direct |
-|-------------------|-----------|------------|
-| affinity_rate     | 40%       | +10%       |
-| precision_rate    | 100%      | —          |
-| critical_rate     | 80%       | +20%       |
+| Rate           | Normal cap | Direct cap |
+|----------------|------------|------------|
+| affinity_rate  | 40%        | +10%       |
+| precision_rate | 100%       | —          |
+| critical_rate  | 80%        | +20%       |
 
-## Lưu ý
+## Notes
 
-- Physical và attribute penetration **chưa được mô phỏng** — kết quả là pre-penetration damage
-- Simulation dùng `/dev/urandom` (SystemRandom)
+- Physical and attribute penetration are **not modeled** — results are pre-penetration damage
+- Simulation uses `/dev/urandom` (SystemRandom)
