@@ -8,9 +8,10 @@ Usage:
   ./calculator.py -s <id|name>         # select skill by DB id or name search
 
 Config files:
-  base.cnf              character stats
-  marginal.cnf          equal-cost upgrade options
-  skills.db             skill formula database  (manage via skill_db.py)
+  base.cnf                    character stats
+  marginal.cnf                equal-cost upgrade options
+  dbs/martial_art_skills.db   martial art skill formulas  (manage via skill_db.py martial ...)
+  dbs/mystic_skills.db        mystic skill formulas       (manage via skill_db.py mystic ...)
 """
 
 import sys
@@ -23,8 +24,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from skill_db import (
-    DB_PATH, SkillFormula,
-    init_db, get_skill_by_id, search_skills, list_skills,
+    SkillFormula,
+    init_all, get_skill_by_id, search_skills, list_skills,
 )
 
 # ─────────────────────────────────────────────
@@ -346,25 +347,30 @@ def apply_override(base: CharStats, path: str) -> CharStats:
     return s
 
 
-def _resolve_skill(arg: str, db_path: str = DB_PATH) -> Optional[SkillFormula]:
+def _resolve_skill(arg: str) -> Optional[SkillFormula]:
     """
-    Resolve a -s argument to a SkillFormula.
-    - If arg is a pure integer → look up by ID.
-    - Otherwise → search by name; if multiple matches, print list and return None.
+    Resolve a -s argument to a SkillFormula (searches both DBs).
+    - If arg is a pure integer → look up by ID (raises ValueError if found in both DBs).
+    - Otherwise → search by name across both DBs; if multiple matches, print list and return None.
     """
     if arg.isdigit():
-        return get_skill_by_id(int(arg), db_path)
-    results = search_skills(arg, db_path)
+        try:
+            return get_skill_by_id(int(arg))
+        except ValueError as e:
+            print(f"  Ambiguous ID: {e}")
+            return None
+    results = search_skills(arg)
     if not results:
         print(f"  No skills found matching '{arg}'.")
         return None
     if len(results) == 1:
         return results[0]
     print(f"  Multiple matches for '{arg}' — pick an ID with -s <id>:\n")
-    print(f"  {'ID':>4}  {'Name':<30}  {'Type':<12}  Weapon")
-    print("  " + "-" * 60)
+    print(f"  {'ID':>4}  {'Name':<30}  {'Type':<12}  {'Weapon/MysticType':<22}")
+    print("  " + "-" * 72)
     for f in results:
-        print(f"  {f.id:>4}  {f.name:<30}  {f.skill_type:<12}  {f.weapon_type or ''}")
+        sub = f.mystic_type or f.weapon_type or ""
+        print(f"  {f.id:>4}  {f.name:<30}  {f.skill_type:<12}  {sub:<22}")
     return None
 
 
@@ -597,21 +603,21 @@ if "-s" in args:
     else:
         print("Error: -s requires a skill id or name"); sys.exit(1)
 
-init_db(DB_PATH)
+init_all()
 active_formula: Optional[SkillFormula] = None
 
 if skill_arg:
-    active_formula = _resolve_skill(skill_arg, DB_PATH)
+    active_formula = _resolve_skill(skill_arg)
     if not active_formula:
         sys.exit(1)
     print(f"Active skill   : [{active_formula.id}] {active_formula.name}")
 elif DEFAULT_SKILL_ID is not None:
-    active_formula = get_skill_by_id(DEFAULT_SKILL_ID, DB_PATH)
+    active_formula = get_skill_by_id(DEFAULT_SKILL_ID)
     if not active_formula:
         print(f"Error: DEFAULT_SKILL_ID={DEFAULT_SKILL_ID} not found in DB."); sys.exit(1)
     print(f"Active skill   : [{active_formula.id}] {active_formula.name}")
 else:
-    all_skills = list_skills(DB_PATH)
+    all_skills = list_skills()
     if all_skills:
         print(f"Available skills ({len(all_skills)}):")
         for f in all_skills:
