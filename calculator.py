@@ -3,13 +3,14 @@
 Where Winds Meet (WWM) - Damage Calculator
 ==========================================
 Usage:
-  ./wwm_dmg_calc.py                    # base stats, active skill formula
-  ./wwm_dmg_calc.py change.cnf         # compare base vs override
+  ./calculator.py                      # base stats, default skill
+  ./calculator.py change.cnf           # compare base vs override
+  ./calculator.py -s <id|name>         # select skill by DB id or name search
 
 Config files:
   base.cnf              character stats
-  skill_formulas.cnf    skill damage formulas
   marginal.cnf          equal-cost upgrade options
+  skills.db             skill formula database  (manage via skill_db.py)
 """
 
 import sys
@@ -18,18 +19,20 @@ import random
 from copy import deepcopy
 from dataclasses import dataclass
 from itertools import combinations_with_replacement
-from typing import Dict, Optional
+from typing import Dict, List, Optional
+
+from skill_db import (
+    DB_PATH, SkillFormula,
+    init_db, get_skill_by_id, search_skills, list_skills,
+)
 
 # ─────────────────────────────────────────────
 # Constants
 # ─────────────────────────────────────────────
-ATTRIBUTES           = ("bellstrike", "stonesplit", "bamboocut", "silkbind")
-BASE_CONFIG          = "base.cnf"
-SKILL_FORMULAS_FILE  = "skill_formulas.cnf"
-MARGINAL_CONFIG      = "marginal.cnf"
-# SKILL = "soaring spin 1st hit"
-# SKILL = "soaring spin 2nd hit"
-SKILL = "vagrant sword 3rd hit"
+ATTRIBUTES      = ("bellstrike", "stonesplit", "bamboocut", "silkbind")
+BASE_CONFIG     = "base.cnf"
+MARGINAL_CONFIG = "marginal.cnf"
+DEFAULT_SKILL_ID: Optional[int] = None  # set to an int to pre-select a skill by ID
 
 AFFINITY_CAP         = 0.40
 DIRECT_AFFINITY_CAP  = 0.10
@@ -60,25 +63,6 @@ class AtkStat:
 
     def roll(self, rng: random.SystemRandom) -> float:
         return rng.uniform(self.atk_min, self.atk_max)
-
-
-@dataclass
-class SkillFormula:
-    name:        str   = "default"
-    phys_coeff:  float = 1.0
-    attr_coeff:  float = 1.0
-    phys_bonus:  float = 0.0   # flat bonus, added after phys_coeff × atk
-    attr_bonus:  float = 0.0   # atk bonus, added to attr_atk before coeff
-    is_mystic:   bool  = False  # mystic skills: no x1.5 on main attribute
-
-    def __post_init__(self):
-        if self.is_mystic:
-            self.attr_bonus = 0.0
-            self.attr_coeff = self.phys_coeff
-        else:
-            expected = self.phys_coeff * 1.5
-            if abs(self.attr_coeff - expected) > 0.01 * expected:
-                self.attr_coeff = expected  # enforce x1.5 on main attribute for non-mystic
 
 
 @dataclass
@@ -359,19 +343,26 @@ def apply_override(base: CharStats, path: str) -> CharStats:
     return s
 
 
-def load_skill_formulas(path: str) -> Dict[str, SkillFormula]:
-    cfg = _cfg(path)
-    return {
-        name: SkillFormula(
-            name           = name,
-            phys_coeff  = float(cfg[name].get("phys_coeff",  cfg[name].get("physical_coeff", "1.0"))),
-            attr_coeff  = float(cfg[name].get("attr_coeff",  "1.0")),
-            phys_bonus  = float(cfg[name].get("phys_bonus",  "0")),
-            attr_bonus  = float(cfg[name].get("attr_bonus",  "0")),
-            is_mystic   = cfg[name].get("is_mystic", "false").strip().lower() == "true",
-        )
-        for name in cfg.sections()
-    }
+def _resolve_skill(arg: str, db_path: str = DB_PATH) -> Optional[SkillFormula]:
+    """
+    Resolve a -s argument to a SkillFormula.
+    - If arg is a pure integer → look up by ID.
+    - Otherwise → search by name; if multiple matches, print list and return None.
+    """
+    if arg.isdigit():
+        return get_skill_by_id(int(arg), db_path)
+    results = search_skills(arg, db_path)
+    if not results:
+        print(f"  No skills found matching '{arg}'.")
+        return None
+    if len(results) == 1:
+        return results[0]
+    print(f"  Multiple matches for '{arg}' — pick an ID with -s <id>:\n")
+    print(f"  {'ID':>4}  {'Name':<30}  {'Type':<12}  Weapon")
+    print("  " + "-" * 60)
+    for f in results:
+        print(f"  {f.id:>4}  {f.name:<30}  {f.skill_type:<12}  {f.weapon_type or ''}")
+    return None
 
 
 def load_marginal_opts(path: str, base: CharStats) -> Dict[str, CharStats]:
@@ -589,34 +580,45 @@ try:
 except FileNotFoundError as e:
     print(f"Error: {e}"); sys.exit(1)
 
-try:
-    skill_formulas = load_skill_formulas(SKILL_FORMULAS_FILE)
-    active_formula = skill_formulas.get(SKILL, SkillFormula())
-    print(f"Skill formulas : {', '.join(skill_formulas)}  (active: {active_formula.name})")
-except FileNotFoundError:
-    active_formula = SkillFormula()
-    print("Skill formulas : none found, using default (phys×1.0  attr×1.0  base+0)")
-
 args    = sys.argv[1:]
 verbose = "-v" in args
 args    = [a for a in args if a != "-v"]
 
-# -s <skill_name> to select formula
-skill_name = None
+# -s <id|name> to select skill from DB
+skill_arg = None
 if "-s" in args:
     idx = args.index("-s")
     if idx + 1 < len(args):
-        skill_name = args[idx + 1]
+        skill_arg = args[idx + 1]
         args = [a for i, a in enumerate(args) if i not in (idx, idx + 1)]
     else:
-        print("Error: -s requires a skill name"); sys.exit(1)
+        print("Error: -s requires a skill id or name"); sys.exit(1)
 
-if skill_name:
-    if skill_name not in skill_formulas:
-        print(f"Error: skill '{skill_name}' not found. Available: {', '.join(skill_formulas)}")
+init_db(DB_PATH)
+active_formula: Optional[SkillFormula] = None
+
+if skill_arg:
+    active_formula = _resolve_skill(skill_arg, DB_PATH)
+    if not active_formula:
         sys.exit(1)
-    active_formula = skill_formulas[skill_name]
-    print(f"Active formula : {active_formula.name}")
+    print(f"Active skill   : [{active_formula.id}] {active_formula.name}")
+elif DEFAULT_SKILL_ID is not None:
+    active_formula = get_skill_by_id(DEFAULT_SKILL_ID, DB_PATH)
+    if not active_formula:
+        print(f"Error: DEFAULT_SKILL_ID={DEFAULT_SKILL_ID} not found in DB."); sys.exit(1)
+    print(f"Active skill   : [{active_formula.id}] {active_formula.name}")
+else:
+    all_skills = list_skills(DB_PATH)
+    if all_skills:
+        print(f"Available skills ({len(all_skills)}):")
+        for f in all_skills:
+            print(f"  [{f.id}] {f.name}  ({f.skill_type}{'  DOT' if f.is_dot else ''})")
+        print("\nUse -s <id> or -s <name> to select a skill, or set DEFAULT_SKILL_ID.")
+        sys.exit(0)
+    else:
+        print("No skills in DB. Use 'python skill_db.py add' to add one.")
+        active_formula = SkillFormula()
+        print("Using default formula (phys×1.0  attr×1.0  bonus=0)")
 
 if args:
     try:
