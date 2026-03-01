@@ -486,6 +486,9 @@ def _martial_wizard(base: Optional[SkillFormula] = None) -> Optional[SkillFormul
             "weapon_type", _WEAPON_TYPE_VALUES,
             default=base.weapon_type if base else None,
         )
+        if weapon_type is None:
+            print("  weapon_type is required for martial art skills.")
+            return None
 
         attribute_type = _select_option(
             "attribute_type", _ATTRIBUTE_TYPE_VALUES,
