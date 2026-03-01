@@ -550,33 +550,32 @@ def _select_profile() -> Optional[CharProfile]:
 
 
 def _select_skill() -> Optional[SkillFormula]:
-    """Print skill list and let user pick one by ID."""
+    """Print skill list with sequential row numbers; user picks by row #."""
     skills = list_skills()
     if not skills:
         print("  No skills found. Use 'skill_db.py martial add' to create one.")
         return None
-    print(f"\n  {'ID':>4}  {'Name':<30}  {'Type':<10}  {'Weapon / MysticType'}")
+    print(f"\n  {'#':>4}  {'Name':<30}  {'Type':<10}  {'Weapon / MysticType'}")
     print("  " + "-" * 72)
-    for f in skills:
-        _print_skill_line(f)
+    for i, f in enumerate(skills, 1):
+        stype = "mystic" if f.is_mystic else "martial"
+        sub   = f.mystic_type or f.weapon_type or ""
+        dot   = "  DOT" if f.is_dot else ""
+        print(f"  {i:>4}  {f.name:<30}  {stype:<10}  {sub:<24}{dot}")
     print()
     try:
-        raw = input("  Skill ID (q=back): ").strip()
+        raw = input(f"  Skill # 1-{len(skills)} (q=back): ").strip()
     except (KeyboardInterrupt, EOFError):
         return None
     if raw.lower() in ("q", "quit", ""):
         return None
     try:
-        sid = int(raw)
+        idx = int(raw)
     except ValueError:
-        print("  Not a valid ID."); return None
-    try:
-        f = get_skill_by_id(sid)
-    except ValueError as e:
-        print(f"  Ambiguous ID: {e}"); return None
-    if not f:
-        print(f"  Skill ID={sid} not found."); return None
-    return f
+        print("  Not a valid number."); return None
+    if not (1 <= idx <= len(skills)):
+        print(f"  Out of range (1–{len(skills)})."); return None
+    return skills[idx - 1]
 
 
 def _mode_simulate(profile: CharProfile, skill: SkillFormula) -> None:
