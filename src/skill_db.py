@@ -51,13 +51,14 @@ MYSTIC_DB_PATH      = str(_DBDIR / "mystic_skills.db")
 
 _MARTIAL_SCHEMA = """
 CREATE TABLE IF NOT EXISTS skills (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT    NOT NULL,
-    phys_coeff  REAL    NOT NULL DEFAULT 1.0,
-    phys_bonus  REAL    NOT NULL DEFAULT 0.0,
-    attr_bonus  REAL    NOT NULL DEFAULT 0.0,
-    weapon_type TEXT,
-    is_dot      INTEGER NOT NULL DEFAULT 0
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    name           TEXT    NOT NULL,
+    phys_coeff     REAL    NOT NULL DEFAULT 1.0,
+    phys_bonus     REAL    NOT NULL DEFAULT 0.0,
+    attr_bonus     REAL    NOT NULL DEFAULT 0.0,
+    weapon_type    TEXT,
+    attribute_type TEXT,   -- bellstrike | stonesplit | bamboocut | silkbind
+    is_dot         INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -95,6 +96,16 @@ class WeaponType(str, Enum):
 _WEAPON_TYPE_VALUES = [t.value for t in WeaponType]
 
 
+class AttributeType(str, Enum):
+    """Martial art attribute types — which attribute pool the skill draws from."""
+    BELLSTRIKE = "bellstrike"
+    STONESPLIT = "stonesplit"
+    BAMBOOCUT  = "bamboocut"
+    SILKBIND   = "silkbind"
+
+_ATTRIBUTE_TYPE_VALUES = [t.value for t in AttributeType]
+
+
 class MysticType(str, Enum):
     """Mystic skill sub-types, used for targeted DMG bonus in character profiles."""
     AREA_DEBUFF           = "area_debuff"
@@ -117,8 +128,9 @@ class SkillFormula:
     attr_bonus:  float         = 0.0   # atk bonus added to main attr before coeff
     skill_type:  str           = SkillType.MARTIAL_ART
     is_dot:      bool          = False
-    weapon_type: Optional[str] = None  # martial art only; see WeaponType enum
-    mystic_type: Optional[str] = None  # mystic only; see MysticType enum
+    weapon_type:    Optional[str] = None  # martial art only; see WeaponType enum
+    attribute_type: Optional[str] = None  # martial art only; see AttributeType enum
+    mystic_type:    Optional[str] = None  # mystic only; see MysticType enum
     id:          Optional[int] = None  # None if not yet saved to DB
 
     @property
@@ -130,9 +142,10 @@ class SkillFormula:
         if isinstance(self.skill_type, Enum):
             self.skill_type = self.skill_type.value
         if self.is_mystic:
-            self.attr_coeff  = self.phys_coeff  # mystic: same coeff for all attrs
-            self.attr_bonus  = 0.0              # no attr bonus for mystic
-            self.weapon_type = None             # mystic skills not weapon-specific
+            self.attr_coeff     = self.phys_coeff  # mystic: same coeff for all attrs
+            self.attr_bonus     = 0.0              # no attr bonus for mystic
+            self.weapon_type    = None             # mystic skills not weapon-specific
+            self.attribute_type = None             # not applicable to mystic
         else:
             self.attr_coeff  = self.phys_coeff * 1.5  # always enforced for martial art
             self.mystic_type = None                    # not applicable to martial art
@@ -149,14 +162,15 @@ def _connect(db_path: str) -> sqlite3.Connection:
 
 def _martial_row_to_formula(row: sqlite3.Row) -> SkillFormula:
     return SkillFormula(
-        id          = row["id"],
-        name        = row["name"],
-        phys_coeff  = row["phys_coeff"],
-        phys_bonus  = row["phys_bonus"],
-        attr_bonus  = row["attr_bonus"],
-        skill_type  = SkillType.MARTIAL_ART,
-        is_dot      = bool(row["is_dot"]),
-        weapon_type = row["weapon_type"],
+        id             = row["id"],
+        name           = row["name"],
+        phys_coeff     = row["phys_coeff"],
+        phys_bonus     = row["phys_bonus"],
+        attr_bonus     = row["attr_bonus"],
+        skill_type     = SkillType.MARTIAL_ART,
+        is_dot         = bool(row["is_dot"]),
+        weapon_type    = row["weapon_type"],
+        attribute_type = row["attribute_type"],
         # attr_coeff derived in __post_init__; mystic_type = None via __post_init__
     )
 
@@ -182,6 +196,10 @@ def init_martial_db(db_path: str = MARTIAL_ART_DB_PATH) -> None:
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path) as conn:
         conn.executescript(_MARTIAL_SCHEMA)
+        # Auto-migrate: add attribute_type column to existing DBs
+        existing = {r[1] for r in conn.execute("PRAGMA table_info(skills)").fetchall()}
+        if "attribute_type" not in existing:
+            conn.execute("ALTER TABLE skills ADD COLUMN attribute_type TEXT")
 
 
 def init_mystic_db(db_path: str = MYSTIC_DB_PATH) -> None:
@@ -220,10 +238,12 @@ def add_skill(
         init_martial_db(martial_db)
         with _connect(martial_db) as conn:
             cur = conn.execute(
-                "INSERT INTO skills (name, phys_coeff, phys_bonus, attr_bonus, weapon_type, is_dot) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO skills "
+                "(name, phys_coeff, phys_bonus, attr_bonus, weapon_type, attribute_type, is_dot) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (formula.name, formula.phys_coeff, formula.phys_bonus,
-                 formula.attr_bonus, formula.weapon_type, int(formula.is_dot)),
+                 formula.attr_bonus, formula.weapon_type, formula.attribute_type,
+                 int(formula.is_dot)),
             )
             return cur.lastrowid
 
@@ -248,9 +268,10 @@ def update_skill(
         with _connect(martial_db) as conn:
             conn.execute(
                 "UPDATE skills SET name=?, phys_coeff=?, phys_bonus=?, attr_bonus=?, "
-                "weapon_type=?, is_dot=? WHERE id=?",
+                "weapon_type=?, attribute_type=?, is_dot=? WHERE id=?",
                 (formula.name, formula.phys_coeff, formula.phys_bonus,
-                 formula.attr_bonus, formula.weapon_type, int(formula.is_dot), formula.id),
+                 formula.attr_bonus, formula.weapon_type, formula.attribute_type,
+                 int(formula.is_dot), formula.id),
             )
 
 
@@ -434,17 +455,18 @@ def _print_skill_detail(f: SkillFormula) -> None:
     print(f"  Name        : {f.name}")
     print(f"  skill_type  : {f.skill_type}")
     if f.is_mystic:
-        print(f"  mystic_type : {f.mystic_type or '(none)'}")
-        print(f"  phys_coeff  : {f.phys_coeff}")
-        print(f"  attr_coeff  : {f.attr_coeff}  (= phys_coeff for mystic)")
-        print(f"  phys_bonus  : {f.phys_bonus}")
+        print(f"  mystic_type    : {f.mystic_type or '(none)'}")
+        print(f"  phys_coeff     : {f.phys_coeff}")
+        print(f"  attr_coeff     : {f.attr_coeff}  (= phys_coeff for mystic)")
+        print(f"  phys_bonus     : {f.phys_bonus}")
     else:
-        print(f"  weapon_type : {f.weapon_type or '(none)'}")
-        print(f"  phys_coeff  : {f.phys_coeff}")
-        print(f"  attr_coeff  : {f.attr_coeff}  (enforced to phys×1.5)")
-        print(f"  phys_bonus  : {f.phys_bonus}")
-        print(f"  attr_bonus  : {f.attr_bonus}")
-    print(f"  is_dot      : {f.is_dot}")
+        print(f"  weapon_type    : {f.weapon_type or '(none)'}")
+        print(f"  attribute_type : {f.attribute_type or '(none)'}")
+        print(f"  phys_coeff     : {f.phys_coeff}")
+        print(f"  attr_coeff     : {f.attr_coeff}  (enforced to phys×1.5)")
+        print(f"  phys_bonus     : {f.phys_bonus}")
+        print(f"  attr_bonus     : {f.attr_bonus}")
+    print(f"  is_dot         : {f.is_dot}")
 
 
 # ─────────────────────────────────────────────
@@ -509,18 +531,24 @@ def _martial_wizard(base: Optional[SkillFormula] = None) -> Optional[SkillFormul
             default=base.weapon_type if base else None,
         )
 
+        attribute_type = _select_option(
+            "attribute_type", _ATTRIBUTE_TYPE_VALUES,
+            default=base.attribute_type if base else None,
+        )
+
         is_dot_raw = _prompt("is_dot (y/n)", "y" if (base and base.is_dot) else "n")
         is_dot     = is_dot_raw.lower() in ("y", "yes", "1", "true")
 
         return SkillFormula(
-            id          = base.id if base else None,
-            name        = name,
-            phys_coeff  = phys_coeff,
-            phys_bonus  = phys_bonus,
-            attr_bonus  = attr_bonus,
-            skill_type  = SkillType.MARTIAL_ART,
-            is_dot      = is_dot,
-            weapon_type = weapon_type,
+            id             = base.id if base else None,
+            name           = name,
+            phys_coeff     = phys_coeff,
+            phys_bonus     = phys_bonus,
+            attr_bonus     = attr_bonus,
+            skill_type     = SkillType.MARTIAL_ART,
+            is_dot         = is_dot,
+            weapon_type    = weapon_type,
+            attribute_type = attribute_type,
         )
     except (KeyboardInterrupt, EOFError):
         print("\n  Cancelled."); return None

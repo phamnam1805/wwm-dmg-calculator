@@ -44,7 +44,6 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS profiles (
     id   INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    main_attribute TEXT NOT NULL DEFAULT 'bellstrike',
 
     -- Physical
     physical_min       REAL NOT NULL DEFAULT 0.0,
@@ -115,9 +114,6 @@ class CharProfile:
     # Metadata
     id:   Optional[int] = None
     name: str           = "default"
-
-    # Main attribute
-    main_attribute: str = "bellstrike"
 
     # Physical
     physical_min:       float = 0.0
@@ -193,8 +189,9 @@ def _all_columns() -> List[str]:
 
 
 def _row_to_profile(row: sqlite3.Row) -> CharProfile:
-    """Convert a DB row to CharProfile. Column names match field names 1-1."""
-    return CharProfile(**dict(row))
+    """Convert a DB row to CharProfile, ignoring any unknown/legacy columns."""
+    known = {f.name for f in dc_fields(CharProfile)}
+    return CharProfile(**{k: v for k, v in dict(row).items() if k in known})
 
 
 # ─────────────────────────────────────────────
@@ -205,6 +202,13 @@ def init_db(db_path: str = DB_PATH) -> None:
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path) as conn:
         conn.executescript(_SCHEMA)
+        # Auto-migrate: drop main_attribute column if it still exists (SQLite ≥ 3.35.0)
+        existing = {r[1] for r in conn.execute("PRAGMA table_info(profiles)").fetchall()}
+        if "main_attribute" in existing:
+            try:
+                conn.execute("ALTER TABLE profiles DROP COLUMN main_attribute")
+            except Exception:
+                pass  # SQLite < 3.35.0 — column stays orphaned but is filtered on read
 
 
 def add_profile(profile: CharProfile, db_path: str = DB_PATH) -> int:
@@ -268,25 +272,22 @@ def list_profiles(db_path: str = DB_PATH) -> List[CharProfile]:
 # ─────────────────────────────────────────────
 # CLI helpers
 # ─────────────────────────────────────────────
-_COL = f"  {'ID':>4}  {'Name':<28}  {'Main attr':<12}  {'Eff Aff%':>8}  {'Eff Crit%':>9}"
-_DIV = "  " + "-" * 68
+_COL = f"  {'ID':>4}  {'Name':<28}  {'Eff Aff%':>8}  {'Eff Crit%':>9}"
+_DIV = "  " + "-" * 56
 
 
 def _print_profile_row(p: CharProfile) -> None:
     eff_aff  = min(p.affinity_rate, 0.40) + min(p.direct_affinity_rate, 0.10)
     eff_crit = min(p.critical_rate, 0.80) + min(p.direct_critical_rate, 0.20)
-    print(f"  {p.id:>4}  {p.name:<28}  {p.main_attribute:<12}"
-          f"  {eff_aff*100:>7.1f}%  {eff_crit*100:>8.1f}%")
+    print(f"  {p.id:>4}  {p.name:<28}  {eff_aff*100:>7.1f}%  {eff_crit*100:>8.1f}%")
 
 
 def _print_profile_detail(p: CharProfile) -> None:
     def pct(v: float) -> str:
         return f"{v*100:.1f}%"
 
-    main = p.main_attribute
     print(f"  ID           : {p.id}")
     print(f"  Name         : {p.name}")
-    print(f"  Main attr    : {main}")
     print()
 
     # Physical
@@ -298,12 +299,11 @@ def _print_profile_detail(p: CharProfile) -> None:
     # Attributes
     print("  [Attributes]")
     for attr in ATTRIBUTES:
-        tag  = "  ← MAIN" if attr == main else ""
         amin = getattr(p, f"{attr}_min")
         amax = getattr(p, f"{attr}_max")
         apen = getattr(p, f"{attr}_pen")
         admb = getattr(p, f"{attr}_dmg_bonus")
-        print(f"    {attr:<12}: {amin} - {amax}  pen={apen}  dmg_bonus={pct(admb)}{tag}")
+        print(f"    {attr:<12}: {amin} - {amax}  pen={apen}  dmg_bonus={pct(admb)}")
     print()
 
     # Combat rates
@@ -384,11 +384,6 @@ def _wizard(base: Optional[CharProfile] = None) -> Optional[CharProfile]:
         if not name:
             print("  Name cannot be empty."); return None
 
-        # ── Main attribute ─────────────────────────────
-        main_attribute = _select_from(
-            "main_attribute", list(ATTRIBUTES), b.main_attribute
-        )
-
         # ── Physical stats ─────────────────────────────
         print(f"\n{SEP}\n  Physical stats\n{SEP}")
         physical_min       = _pf("physical_min",       b.physical_min)
@@ -399,8 +394,7 @@ def _wizard(base: Optional[CharProfile] = None) -> Optional[CharProfile]:
         # ── Attribute stats ────────────────────────────
         attr_vals: dict = {}
         for attr in ATTRIBUTES:
-            tag = "  ← MAIN" if attr == main_attribute else ""
-            print(f"\n{SEP}\n  Attribute: {attr}{tag}\n{SEP}")
+            print(f"\n{SEP}\n  Attribute: {attr}\n{SEP}")
             attr_vals[f"{attr}_min"]       = _pf(f"{attr}_min",       getattr(b, f"{attr}_min"))
             attr_vals[f"{attr}_max"]       = _pf(f"{attr}_max",       getattr(b, f"{attr}_max"))
             attr_vals[f"{attr}_pen"]       = _pf(f"{attr}_pen",       getattr(b, f"{attr}_pen"))
@@ -434,9 +428,8 @@ def _wizard(base: Optional[CharProfile] = None) -> Optional[CharProfile]:
             mystic_vals[key] = _pf(f"  {mt}", getattr(b, key))
 
         return CharProfile(
-            id             = b.id,
-            name           = name,
-            main_attribute = main_attribute,
+            id   = b.id,
+            name = name,
             physical_min       = physical_min,
             physical_max       = physical_max,
             physical_pen       = physical_pen,
