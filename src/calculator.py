@@ -19,6 +19,7 @@ import random
 from copy import deepcopy
 from dataclasses import dataclass
 from itertools import combinations_with_replacement
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from skill_db import (
@@ -29,9 +30,11 @@ from skill_db import (
 # ─────────────────────────────────────────────
 # Constants
 # ─────────────────────────────────────────────
+_ROOT = Path(__file__).parent.parent   # repo root (one level above src/)
+
 ATTRIBUTES      = ("bellstrike", "stonesplit", "bamboocut", "silkbind")
-BASE_CONFIG     = "base.cnf"
-MARGINAL_CONFIG = "marginal.cnf"
+BASE_CONFIG     = str(_ROOT / "base.cnf")
+MARGINAL_CONFIG = str(_ROOT / "marginal.cnf")
 DEFAULT_SKILL_ID: Optional[int] = None  # set to an int to pre-select a skill by ID
 
 AFFINITY_CAP         = 0.40

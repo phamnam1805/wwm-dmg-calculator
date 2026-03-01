@@ -19,7 +19,7 @@ Commands:
 
 import sqlite3
 import sys
-import os
+from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
@@ -27,7 +27,7 @@ from typing import List, Optional
 # ─────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────
-DB_PATH = "skills.db"
+DB_PATH = str(Path(__file__).parent.parent / "dbs" / "skills.db")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS skills (
@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS skills (
     skill_type  TEXT NOT NULL DEFAULT 'martial_art'
                 CHECK(skill_type IN ('martial_art', 'mystic')),
     is_dot      INTEGER NOT NULL DEFAULT 0,
-    weapon_type TEXT
+    weapon_type TEXT,
+    CHECK(skill_type != 'mystic' OR weapon_type IS NULL)
 );
 """
 
@@ -56,9 +57,14 @@ class SkillType(str, Enum):
 class WeaponType(str, Enum):
     """Known weapon types. Extend freely — no DB schema change needed."""
     SWORD      = "sword"
-    DUAL_BLADE = "dual_blade"
+    DUAL_BLADES = "dual_blades"
     SPEAR      = "spear"
-    BOW        = "bow"
+    FAN = "fan"
+    UMBRELLA = "umbrella"
+    HENG_BLADE = "heng_blade"
+    MO_BLADE = "mo_blade"
+    ROPE_DART = "rope_dart"
+
 
 
 # ─────────────────────────────────────────────
@@ -83,8 +89,9 @@ class SkillFormula:
 
     def __post_init__(self):
         if self.is_mystic:
-            self.attr_bonus = 0.0
-            self.attr_coeff = self.phys_coeff
+            self.attr_bonus  = 0.0
+            self.attr_coeff  = self.phys_coeff
+            self.weapon_type = None            # mystic skills are not weapon-specific
         else:
             expected = self.phys_coeff * 1.5
             if abs(self.attr_coeff - expected) > 0.01 * expected:
@@ -252,7 +259,7 @@ def _wizard(base: Optional[SkillFormula] = None) -> Optional[SkillFormula]:
         is_dot_raw = _prompt("is_dot (y/n)", "y" if (base and base.is_dot) else "n")
         is_dot     = is_dot_raw.lower() in ("y", "yes", "1", "true")
 
-        weapon     = _prompt("weapon_type (sword/dual_blade/spear/bow or blank)",
+        weapon     = _prompt("weapon_type (sword/dual_blades/spear/umbrella/fan/heng_blade/mo_blade/rope_dart or blank)",
                              base.weapon_type if base else "")
         weapon     = weapon if weapon else None
 
