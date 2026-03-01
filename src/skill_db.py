@@ -3,7 +3,7 @@
 skill_db.py — Skill formula database (SQLite)
 ==============================================
 Library API  : import and call functions directly (usable from Web UI, CLI, etc.)
-Interactive CLI: python skill_db.py [command] [args]
+Interactive CLI: python src/skill_db.py [command] [args]
 
 Commands:
   list                    list all skills
@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS skills (
                 CHECK(skill_type IN ('martial_art', 'mystic')),
     is_dot      INTEGER NOT NULL DEFAULT 0,
     weapon_type TEXT,
+    mystic_type TEXT,   -- NULL | area_debuff | area_dmg | single_target_control | single_target_burst
     CHECK(skill_type != 'mystic' OR weapon_type IS NULL)
 );
 """
@@ -56,15 +57,24 @@ class SkillType(str, Enum):
 
 class WeaponType(str, Enum):
     """Known weapon types. Extend freely — no DB schema change needed."""
-    SWORD      = "sword"
+    SWORD       = "sword"
     DUAL_BLADES = "dual_blades"
-    SPEAR      = "spear"
-    FAN = "fan"
-    UMBRELLA = "umbrella"
-    HENG_BLADE = "heng_blade"
-    MO_BLADE = "mo_blade"
-    ROPE_DART = "rope_dart"
+    SPEAR       = "spear"
+    FAN         = "fan"
+    UMBRELLA    = "umbrella"
+    HENG_BLADE  = "heng_blade"
+    MO_BLADE    = "mo_blade"
+    ROPE_DART   = "rope_dart"
 
+
+class MysticType(str, Enum):
+    """Mystic skill sub-types, used for targeted DMG bonus in character profiles."""
+    AREA_DEBUFF           = "area_debuff"
+    AREA_DMG              = "area_dmg"
+    SINGLE_TARGET_CONTROL = "single_target_control"
+    SINGLE_TARGET_BURST   = "single_target_burst"
+
+_MYSTIC_TYPE_VALUES = [t.value for t in MysticType]
 
 
 # ─────────────────────────────────────────────
@@ -80,6 +90,7 @@ class SkillFormula:
     skill_type:  str           = SkillType.MARTIAL_ART
     is_dot:      bool          = False
     weapon_type: Optional[str] = None
+    mystic_type: Optional[str] = None  # only for mystic skills; see MysticType enum
     id:          Optional[int] = None  # None if not yet saved to DB
 
     @property
@@ -96,6 +107,7 @@ class SkillFormula:
             expected = self.phys_coeff * 1.5
             if abs(self.attr_coeff - expected) > 0.01 * expected:
                 self.attr_coeff = expected  # enforce x1.5 for non-mystic main attr
+            self.mystic_type = None           # not applicable for non-mystic skills
 
 
 # ─────────────────────────────────────────────
@@ -118,6 +130,7 @@ def _row_to_formula(row: sqlite3.Row) -> SkillFormula:
         skill_type  = row["skill_type"],
         is_dot      = bool(row["is_dot"]),
         weapon_type = row["weapon_type"],
+        mystic_type = row["mystic_type"],
     )
 
 
@@ -128,6 +141,10 @@ def init_db(db_path: str = DB_PATH) -> None:
     """Create the skills table if it does not exist. Safe to call multiple times."""
     with _connect(db_path) as conn:
         conn.executescript(_SCHEMA)
+        # Auto-migrate: add mystic_type column to existing DBs
+        existing = {r[1] for r in conn.execute("PRAGMA table_info(skills)").fetchall()}
+        if "mystic_type" not in existing:
+            conn.execute("ALTER TABLE skills ADD COLUMN mystic_type TEXT")
 
 
 def add_skill(formula: SkillFormula, db_path: str = DB_PATH) -> int:
@@ -136,11 +153,11 @@ def add_skill(formula: SkillFormula, db_path: str = DB_PATH) -> int:
     with _connect(db_path) as conn:
         cur = conn.execute(
             "INSERT INTO skills "
-            "(name, phys_coeff, attr_coeff, phys_bonus, attr_bonus, skill_type, is_dot, weapon_type) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "(name, phys_coeff, attr_coeff, phys_bonus, attr_bonus, skill_type, is_dot, weapon_type, mystic_type) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (formula.name, formula.phys_coeff, formula.attr_coeff,
              formula.phys_bonus, formula.attr_bonus,
-             formula.skill_type, int(formula.is_dot), formula.weapon_type),
+             formula.skill_type, int(formula.is_dot), formula.weapon_type, formula.mystic_type),
         )
         return cur.lastrowid
 
@@ -152,10 +169,10 @@ def update_skill(formula: SkillFormula, db_path: str = DB_PATH) -> None:
     with _connect(db_path) as conn:
         conn.execute(
             "UPDATE skills SET name=?, phys_coeff=?, attr_coeff=?, phys_bonus=?, "
-            "attr_bonus=?, skill_type=?, is_dot=?, weapon_type=? WHERE id=?",
+            "attr_bonus=?, skill_type=?, is_dot=?, weapon_type=?, mystic_type=? WHERE id=?",
             (formula.name, formula.phys_coeff, formula.attr_coeff,
              formula.phys_bonus, formula.attr_bonus,
-             formula.skill_type, int(formula.is_dot), formula.weapon_type,
+             formula.skill_type, int(formula.is_dot), formula.weapon_type, formula.mystic_type,
              formula.id),
         )
 
@@ -224,6 +241,7 @@ def _print_skill_detail(f: SkillFormula) -> None:
     print(f"  ID          : {f.id}")
     print(f"  Name        : {f.name}")
     print(f"  skill_type  : {f.skill_type}")
+    print(f"  mystic_type : {f.mystic_type or '(none)'}")
     print(f"  weapon_type : {f.weapon_type or '(none)'}")
     print(f"  is_dot      : {f.is_dot}")
     print(f"  phys_coeff  : {f.phys_coeff}")
@@ -237,6 +255,33 @@ def _prompt(label: str, default=None) -> str:
     hint = f" [{default}]" if default is not None else ""
     val  = input(f"  {label}{hint}: ").strip()
     return val if val else (str(default) if default is not None else "")
+
+
+def _select_option(label: str, options: List[str], default: Optional[str] = None) -> Optional[str]:
+    """Show a numbered selection menu. Returns the chosen option, or None for '(none)'."""
+    print(f"\n  {label}:")
+    marker0 = "  ← current" if default is None else ""
+    print(f"    [0] (none){marker0}")
+    for i, opt in enumerate(options, 1):
+        marker = "  ← current" if opt == default else ""
+        print(f"    [{i}] {opt}{marker}")
+    try:
+        raw = input(f"  Choice [0-{len(options)}] (Enter=keep current): ").strip()
+    except (KeyboardInterrupt, EOFError):
+        raise
+    if not raw:
+        return default
+    try:
+        idx = int(raw)
+    except ValueError:
+        print("  Invalid, keeping current.")
+        return default
+    if idx == 0:
+        return None
+    if 1 <= idx <= len(options):
+        return options[idx - 1]
+    print("  Out of range, keeping current.")
+    return default
 
 
 def _wizard(base: Optional[SkillFormula] = None) -> Optional[SkillFormula]:
@@ -256,6 +301,14 @@ def _wizard(base: Optional[SkillFormula] = None) -> Optional[SkillFormula]:
             print(f"  Invalid skill_type '{stype_raw}'. Use 'martial_art' or 'mystic'.")
             return None
 
+        # mystic_type — selection menu, only shown for mystic skills
+        mystic_type = base.mystic_type if base else None
+        if stype_raw == SkillType.MYSTIC:
+            mystic_type = _select_option(
+                "mystic_type", _MYSTIC_TYPE_VALUES,
+                default=base.mystic_type if base else None,
+            )
+
         is_dot_raw = _prompt("is_dot (y/n)", "y" if (base and base.is_dot) else "n")
         is_dot     = is_dot_raw.lower() in ("y", "yes", "1", "true")
 
@@ -273,6 +326,7 @@ def _wizard(base: Optional[SkillFormula] = None) -> Optional[SkillFormula]:
             skill_type  = stype_raw,
             is_dot      = is_dot,
             weapon_type = weapon,
+            mystic_type = mystic_type,
         )
     except (KeyboardInterrupt, EOFError):
         print("\n  Cancelled.")
