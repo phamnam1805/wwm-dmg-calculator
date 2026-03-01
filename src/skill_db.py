@@ -491,6 +491,9 @@ def _martial_wizard(base: Optional[SkillFormula] = None) -> Optional[SkillFormul
             "attribute_type", _ATTRIBUTE_TYPE_VALUES,
             default=base.attribute_type if base else None,
         )
+        if attribute_type is None:
+            print("  attribute_type is required for martial art skills.")
+            return None
 
         is_dot_raw = _prompt("is_dot (y/n)", "y" if (base and base.is_dot) else "n")
         is_dot     = is_dot_raw.lower() in ("y", "yes", "1", "true")
