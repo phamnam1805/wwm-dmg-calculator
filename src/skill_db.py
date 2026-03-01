@@ -30,7 +30,6 @@ Subcommand-scoped (work on one DB):
 Global commands (work across both DBs):
   list                           list ALL skills (both DBs)
   search <name>                  search across both DBs
-  migrate [old_db_path]          migrate old skills.db → separate DBs
   init                           initialise both DBs
 """
 
@@ -39,7 +38,7 @@ import sys
 from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 # ─────────────────────────────────────────────
 # Config
@@ -383,49 +382,6 @@ def list_skills(
             rows = conn.execute("SELECT * FROM skills ORDER BY id").fetchall()
         results.extend(_mystic_row_to_formula(r) for r in rows)
     return results
-
-
-def migrate_from_old_db(
-    old_db:     str,
-    martial_db: str = MARTIAL_ART_DB_PATH,
-    mystic_db:  str = MYSTIC_DB_PATH,
-) -> Tuple[int, int]:
-    """
-    Migrate skills from old unified skills.db to the new separate DBs.
-    Returns (n_martial, n_mystic) counts of migrated skills.
-    Old IDs are NOT preserved — new IDs are auto-assigned.
-    """
-    init_all(martial_db, mystic_db)
-    n_martial = n_mystic = 0
-    with _connect(old_db) as old_conn:
-        rows = old_conn.execute("SELECT * FROM skills ORDER BY id").fetchall()
-    for row in rows:
-        stype = row["skill_type"]
-        old_keys = row.keys()
-        if stype == SkillType.MYSTIC:
-            f = SkillFormula(
-                name        = row["name"],
-                phys_coeff  = row["phys_coeff"],
-                phys_bonus  = row["phys_bonus"],
-                skill_type  = SkillType.MYSTIC,
-                is_dot      = bool(row["is_dot"]),
-                mystic_type = row["mystic_type"] if "mystic_type" in old_keys else None,
-            )
-            add_skill(f, martial_db, mystic_db)
-            n_mystic += 1
-        else:
-            f = SkillFormula(
-                name        = row["name"],
-                phys_coeff  = row["phys_coeff"],
-                phys_bonus  = row["phys_bonus"],
-                attr_bonus  = row["attr_bonus"],
-                skill_type  = SkillType.MARTIAL_ART,
-                is_dot      = bool(row["is_dot"]),
-                weapon_type = row["weapon_type"],
-            )
-            add_skill(f, martial_db, mystic_db)
-            n_martial += 1
-    return n_martial, n_mystic
 
 
 # ─────────────────────────────────────────────
@@ -803,17 +759,6 @@ def _cli(argv: List[str]) -> None:
         f = _pick_from_list(skills, global_view=True)
         if f:
             _interact_typed(f, MARTIAL_ART_DB_PATH, MYSTIC_DB_PATH)
-        return
-
-    # ── Global: migrate ────────────────────────
-    if cmd == "migrate":
-        old_db = rest[0] if rest else str(_DBDIR / "skills.db")
-        if not Path(old_db).exists():
-            print(f"  Old DB not found: {old_db}"); return
-        n_m, n_y = migrate_from_old_db(old_db)
-        print(f"  Migrated {n_m} martial art + {n_y} mystic skills from: {old_db}")
-        print(f"    → {MARTIAL_ART_DB_PATH}")
-        print(f"    → {MYSTIC_DB_PATH}")
         return
 
     print(f"  Unknown command '{cmd}'. Run with --help for usage.")

@@ -2,8 +2,7 @@
 """
 profile_db.py — Character profile database (SQLite)
 ====================================================
-Each profile stores a full set of character stats (matching CharStats in
-calculator.py) plus extra damage bonus modifiers:
+Each profile stores a full set of character stats plus damage bonus modifiers:
 
   · all_martial_art_dmg_bonus  — bonus applied to all martial art skills
   · per-weapon-type dmg bonus  — sword, dual_blades, spear, fan, umbrella,
@@ -15,19 +14,20 @@ Library API  : import and call functions directly (no print, safe for Web UI)
 Interactive CLI: python src/profile_db.py [command] [args]
 
 Commands:
-  list              list all profiles
-  show   <id>       show full profile detail
-  add               interactive wizard to add a new profile
-  edit   <id>       interactive wizard to edit a profile
-  remove <id>       delete profile by ID
-  search <name>     fuzzy search by name
-  init              initialise DB (runs automatically on first use)
+  list                 list all profiles
+  show      <id>       show full profile detail
+  add                  interactive wizard to add a new profile
+  edit      <id>       interactive wizard to edit a profile
+  duplicate <id>       copy a profile to a new ID, with optional edits
+  remove    <id>       delete profile by ID
+  search    <name>     fuzzy search by name
+  init                 initialise DB (runs automatically on first use)
 """
 
 import sqlite3
 import sys
 from pathlib import Path
-from dataclasses import dataclass, fields as dc_fields
+from dataclasses import dataclass, fields as dc_fields, replace as dc_replace
 from typing import List, Optional
 
 # ─────────────────────────────────────────────
@@ -581,6 +581,33 @@ def _cli(argv: List[str], db_path: str = DB_PATH) -> None:
         if updated:
             update_profile(updated, db_path)
             print(f"\n  Updated profile ID={updated.id}.")
+        return
+
+    # ── duplicate ─────────────────────────────
+    if cmd == "duplicate":
+        if not rest:
+            print("  Usage: duplicate <id>"); return
+        src = get_profile_by_id(int(rest[0]), db_path)
+        if not src:
+            print(f"  Profile ID={rest[0]} not found."); return
+        # Show the source profile
+        print(f"\n{SEP}\n  Duplicate profile ID={src.id}: {src.name}\n{SEP}")
+        _print_profile_detail(src)
+        print(f"\n{SEP}")
+        # Ask whether to edit before saving
+        try:
+            ans = input("  Edit fields before saving? [y/N]: ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print("\n  Cancelled."); return
+        # Build the copy (id=None so add_profile assigns a new one)
+        copy = dc_replace(src, id=None)
+        if ans in ("y", "yes"):
+            print(f"\n{SEP}\n  Edit duplicate (Enter=keep source value, Ctrl-C to cancel)\n{SEP}")
+            copy = _wizard(base=copy)
+            if copy is None:
+                return
+        new_id = add_profile(copy, db_path)
+        print(f"\n  Duplicated '{copy.name}' → new profile ID={new_id}.")
         return
 
     # ── remove ────────────────────────────────
