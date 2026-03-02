@@ -144,7 +144,7 @@ def _pct(v: float) -> str:
 
 
 def print_entry_row(e: InnerwayEntry) -> None:
-    print(f"  [{e.id}]  {e.name:<36}  {_pct(e.dmg_bonus):>8}  {e.desc}")
+    print(f"  {e.id:<4}  {e.name:<20}  {_pct(e.dmg_bonus):>8}  {e.desc}")
 
 
 def print_entry_detail(e: InnerwayEntry) -> None:
@@ -187,8 +187,8 @@ def _cmd_list() -> None:
     if not entries:
         print("  (no entries)")
         return
-    print(f"  {'ID':<4}  {'Name':<36}  {'Bonus':>8}  Desc")
-    print(f"  {'-'*4}  {'-'*36}  {'-'*8}  {'-'*20}")
+    print(f"  {'ID':<4}  {'Name':<20}  {'Bonus':>8}  Desc")
+    print(f"  {'-'*4}  {'-'*20}  {'-'*8}  {'-'*40}")
     for e in entries:
         print_entry_row(e)
 
