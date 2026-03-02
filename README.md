@@ -9,6 +9,8 @@ Computes the **expected (average) damage of a specific skill** based on a charac
 
 **Requires:** Python 3.9+ · No third-party dependencies (stdlib only: `sqlite3`, `random`, `dataclasses`, `pathlib`)
 
+> **Note:** `calculator.py` in the repo root is deprecated and no longer used. It is kept for reference only.
+
 ---
 
 ## Architecture
