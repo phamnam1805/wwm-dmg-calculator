@@ -17,7 +17,7 @@ The calculator consists of four modules, each with a library API (importable, no
 | `src/marginal_gain_db.py` | `dbs/marginal_gains.db` | Stat delta entries for upgrade comparison |
 | `src/dmg_resolver.py` | *(no own DB)* | Interactive damage resolver — ties everything together |
 
-Database files are stored in `dbs/` (gitignored — not committed to the repository).
+Database files are stored in `dbs/` and committed to the repository.
 
 ---
 
