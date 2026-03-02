@@ -71,6 +71,10 @@ _FIELD_GROUPS: List[tuple] = [
     ("Mystic type DMG bonus", [
         f"{m}_dmg_bonus" for m in MYSTIC_TYPES
     ]),
+    ("Target DMG bonus", [
+        "pvp_dmg_bonus",
+        "boss_dmg_bonus",
+    ]),
 ]
 
 _ALL_FIELDS: List[str] = [f for _, fields in _FIELD_GROUPS for f in fields]
@@ -229,7 +233,7 @@ def _delta_wizard(base_deltas: Dict[str, float]) -> Optional[Dict[str, float]]:
         while True:
             # Show current state
             if deltas:
-                print(f"\n  Current deltas ({len(deltas)}):")
+                print(f"\n  Current deltas:")
                 for field, delta in sorted(deltas.items()):
                     print(f"    {field:<40}  {delta:+.6g}")
             else:

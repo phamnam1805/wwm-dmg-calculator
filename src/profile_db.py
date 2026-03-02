@@ -101,7 +101,11 @@ CREATE TABLE IF NOT EXISTS profiles (
     area_debuff_dmg_bonus           REAL NOT NULL DEFAULT 0.0,
     area_dmg_dmg_bonus              REAL NOT NULL DEFAULT 0.0,
     single_target_control_dmg_bonus REAL NOT NULL DEFAULT 0.0,
-    single_target_burst_dmg_bonus   REAL NOT NULL DEFAULT 0.0
+    single_target_burst_dmg_bonus   REAL NOT NULL DEFAULT 0.0,
+
+    -- Target DMG bonus
+    pvp_dmg_bonus  REAL NOT NULL DEFAULT 0.0,
+    boss_dmg_bonus REAL NOT NULL DEFAULT 0.0
 );
 """
 
@@ -111,6 +115,44 @@ CREATE TABLE IF NOT EXISTS profiles (
 # ─────────────────────────────────────────────
 @dataclass
 class CharProfile:
+
+    def __post_init__(self):
+        self.normalize()
+
+    def normalize(self) -> None:
+        # Ensure *_min <= *_max for all stat pairs
+        for f in dc_fields(self):
+            if not f.name.endswith("_min"):
+                continue
+
+            base = f.name[:-4]          # remove "_min"
+            max_name = f"{base}_max"
+
+            if not hasattr(self, max_name):
+                continue
+
+            vmin = getattr(self, f.name)
+            vmax = getattr(self, max_name)
+
+            if vmin > vmax:
+                setattr(self, max_name, vmin)
+
+        # Cap combat rates
+        caps = {
+            "affinity_rate":        0.40,
+            "critical_rate":        0.80,
+            "precision_rate":       1.00,
+            "direct_affinity_rate": 0.10,
+            "direct_critical_rate": 0.20,
+        }
+
+        for field, cap in caps.items():
+            value = getattr(self, field)
+            if value < 0:
+                setattr(self, field, 0.0)
+            elif value > cap:
+                setattr(self, field, cap)
+
     # Metadata
     id:   Optional[int] = None
     name: str           = "default"
@@ -173,6 +215,10 @@ class CharProfile:
     single_target_control_dmg_bonus: float = 0.0
     single_target_burst_dmg_bonus:   float = 0.0
 
+    # Target DMG bonus (additive into buff_mult)
+    pvp_dmg_bonus:  float = 0.0
+    boss_dmg_bonus: float = 0.0
+
 
 # ─────────────────────────────────────────────
 # Internal helpers
@@ -202,13 +248,17 @@ def init_db(db_path: str = DB_PATH) -> None:
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path) as conn:
         conn.executescript(_SCHEMA)
-        # Auto-migrate: drop main_attribute column if it still exists (SQLite ≥ 3.35.0)
         existing = {r[1] for r in conn.execute("PRAGMA table_info(profiles)").fetchall()}
+        # Auto-migrate: drop legacy column
         if "main_attribute" in existing:
             try:
                 conn.execute("ALTER TABLE profiles DROP COLUMN main_attribute")
             except Exception:
                 pass  # SQLite < 3.35.0 — column stays orphaned but is filtered on read
+        # Auto-migrate: add new target DMG bonus columns
+        for col in ("pvp_dmg_bonus", "boss_dmg_bonus"):
+            if col not in existing:
+                conn.execute(f"ALTER TABLE profiles ADD COLUMN {col} REAL NOT NULL DEFAULT 0.0")
 
 
 def add_profile(profile: CharProfile, db_path: str = DB_PATH) -> int:
@@ -332,6 +382,10 @@ def _print_profile_detail(p: CharProfile) -> None:
         val = getattr(p, f"{mt}_dmg_bonus")
         indicator = pct(val) if val != 0.0 else "—"
         print(f"      {mt:<34}: {indicator}")
+    print()
+    print("    Target DMG bonus:")
+    print(f"      {'pvp':<34}: {pct(p.pvp_dmg_bonus)}")
+    print(f"      {'boss':<34}: {pct(p.boss_dmg_bonus)}")
 
 
 def _prompt(label: str, default=None) -> str:
@@ -427,6 +481,10 @@ def _wizard(base: Optional[CharProfile] = None) -> Optional[CharProfile]:
             key = f"{mt}_dmg_bonus"
             mystic_vals[key] = _pf(f"  {mt}", getattr(b, key))
 
+        print("\n  Target DMG bonus:")
+        pvp_dmg_bonus  = _pf("  pvp",  b.pvp_dmg_bonus)
+        boss_dmg_bonus = _pf("  boss", b.boss_dmg_bonus)
+
         return CharProfile(
             id   = b.id,
             name = name,
@@ -445,6 +503,8 @@ def _wizard(base: Optional[CharProfile] = None) -> Optional[CharProfile]:
             all_martial_art_dmg_bonus = all_martial_art_dmg_bonus,
             **weapon_vals,
             **mystic_vals,
+            pvp_dmg_bonus  = pvp_dmg_bonus,
+            boss_dmg_bonus = boss_dmg_bonus,
         )
 
     except (KeyboardInterrupt, EOFError):
