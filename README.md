@@ -279,4 +279,4 @@ Variance is computed analytically via the **Law of Total Variance** (Var[Uniform
 
 - Target defense / resistance
 - Healer healing formula
-- Innerway **stat modifiers** in combat — e.g. Yi River stacks granted by Morale Chant that increase ATK stats during the fight. Only the direct DMG bonus effect of innerway is currently supported.
+- Innerway **stat modifiers** in combat — e.g. Yi River stacks granted by Morale Chant that increase (DMG bonus+physical penetration) during the fight. Only the direct DMG bonus effect of innerway is currently supported.
