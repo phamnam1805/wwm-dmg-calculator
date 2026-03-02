@@ -56,6 +56,12 @@ from marginal_gain_db import (
     init_db as init_gain_db,
     list_gains,
 )
+from innerway_db import (
+    InnerwayEntry,
+    init_db as init_innerway_db,
+    list_entries as list_innerway_entries,
+    get_entries_by_ids as get_innerway_entries_by_ids,
+)
 
 # ─────────────────────────────────────────────
 # Rate caps  (mirrors calculator.py)
@@ -149,11 +155,18 @@ def _attr_dmg_mult(p: CharProfile, attr: str) -> float:
     return (1 + pen / 200) * (1 + dmg_bonus)
 
 
-def _buff_mult(p: CharProfile, skill: SkillFormula, target: str = "boss") -> float:
+def _buff_mult(
+    p: CharProfile,
+    skill: SkillFormula,
+    target: str = "boss",
+    innerway_bonus: float = 0.0,
+) -> float:
     """
-    buff_mult (martial art): 1 + all_martial_art_dmg_bonus + {weapon_type}_dmg_bonus + target_bonus
-    buff_mult (mystic):      1 + {mystic_type}_dmg_bonus + target_bonus
+    buff_mult (martial art): 1 + all_martial_art_dmg_bonus + {weapon_type}_dmg_bonus
+                               + target_bonus + innerway_bonus
+    buff_mult (mystic):      1 + {mystic_type}_dmg_bonus + target_bonus + innerway_bonus
     target_bonus: boss_dmg_bonus if target == 'boss', pvp_dmg_bonus if target == 'pvp'
+    innerway_bonus: sum of selected innerway dmg_bonus values (additive)
     """
     if skill.is_mystic:
         mt = skill.mystic_type or ""
@@ -168,6 +181,8 @@ def _buff_mult(p: CharProfile, skill: SkillFormula, target: str = "boss") -> flo
         base += p.boss_dmg_bonus
     elif target == "pvp":
         base += p.pvp_dmg_bonus
+
+    base += innerway_bonus
     return base
 
 
@@ -233,13 +248,15 @@ def resolve(
     skill: SkillFormula,
     affix_mult: float = 1.0,
     target: str = "boss",
+    innerway_bonus: float = 0.0,
 ) -> DamageResult:
     """
     Analytical expected damage.
     affix_mult: attunement affix DMG bonus multiplier (martial only; 1.0 = no bonus)
     target: 'boss' or 'pvp' — selects which target DMG bonus is added to buff_mult
+    innerway_bonus: sum of selected innerway dmg_bonus values (additive into buff_mult)
     """
-    bm = _buff_mult(profile, skill, target)
+    bm = _buff_mult(profile, skill, target, innerway_bonus)
     am = affix_mult
     a = _eff_affinity(profile)
     p = _eff_precision(profile)
@@ -339,12 +356,13 @@ def simulate(
     n_rolls: int = 100,
     affix_mult: float = 1.0,
     target: str = "boss",
+    innerway_bonus: float = 0.0,
 ) -> SimulateResult:
     """
     Monte Carlo simulation using /dev/urandom (SystemRandom).
-    affix_mult / target: same semantics as resolve().
+    affix_mult / target / innerway_bonus: same semantics as resolve().
     """
-    bm = _buff_mult(profile, skill, target)
+    bm = _buff_mult(profile, skill, target, innerway_bonus)
     am = affix_mult
     a = _eff_affinity(profile)
     p = _eff_precision(profile)
@@ -431,17 +449,19 @@ def compare_gains(
     gains: List[MarginalGain],
     affix_mult: float = 1.0,
     target: str = "boss",
+    innerway_bonus: float = 0.0,
 ) -> List[Tuple[MarginalGain, DamageResult, float]]:
     """
     Compare a list of marginal gains against the base profile.
     Returns [(gain, result_with_gain, delta_e_dmg), ...] sorted by delta descending.
-    affix_mult / target: applied consistently to base and all gain-modified profiles.
+    affix_mult / target / innerway_bonus: applied consistently to base and all
+    gain-modified profiles.
     """
-    base_e = resolve(profile, skill, affix_mult, target).e_dmg
+    base_e = resolve(profile, skill, affix_mult, target, innerway_bonus).e_dmg
     results = []
     for gain in gains:
         modified = apply_gain(profile, gain)
-        result = resolve(modified, skill, affix_mult, target)
+        result = resolve(modified, skill, affix_mult, target, innerway_bonus)
         delta = result.e_dmg - base_e
         results.append((gain, result, delta))
     results.sort(key=lambda x: -x[2])
@@ -455,14 +475,16 @@ def compare_profiles(
     affix_mult1: float = 1.0,
     affix_mult2: float = 1.0,
     target: str = "boss",
+    innerway_bonus: float = 0.0,
 ) -> Tuple[DamageResult, DamageResult, float]:
     """
     Compare two profiles for the same skill and combat context.
     Each profile has its own affix_mult (attunement affix DMG bonus).
+    innerway_bonus is shared across both profiles (same active innerway).
     Returns (result1, result2, delta_e_dmg) where delta = result2.e_dmg - result1.e_dmg.
     """
-    r1 = resolve(profile1, skill, affix_mult1, target)
-    r2 = resolve(profile2, skill, affix_mult2, target)
+    r1 = resolve(profile1, skill, affix_mult1, target, innerway_bonus)
+    r2 = resolve(profile2, skill, affix_mult2, target, innerway_bonus)
     delta = round(r2.e_dmg - r1.e_dmg, 2)
     return r1, r2, delta
 
@@ -493,6 +515,7 @@ def _print_resolve(
     skill: SkillFormula,
     target: str = "boss",
     affix_mult: float = 1.0,
+    innerway_bonus: float = 0.0,
 ) -> None:
     print(f"\n{_SEP}")
     print(f"  {profile.name}  ·  {skill.name}  ({skill.skill_type})")
@@ -502,13 +525,15 @@ def _print_resolve(
 
     # buff_mult breakdown
     target_b = profile.boss_dmg_bonus if target == "boss" else profile.pvp_dmg_bonus
+    iw_str = f" + {innerway_bonus:.4f} (innerway)" if innerway_bonus != 0.0 else ""
     if skill.is_mystic:
         mt = skill.mystic_type or ""
         mt_b = getattr(profile, f"{mt}_dmg_bonus", 0.0) if mt else 0.0
         print(
             f"  buff_mult  = 1.00"
             f" + {mt_b:.4f} ({mt or '—'})"
-            f" + {target_b:.4f} ({target}) = {r.buff_mult:.6f}"
+            f" + {target_b:.4f} ({target})"
+            f"{iw_str} = {r.buff_mult:.6f}"
         )
     else:
         wt = skill.weapon_type or ""
@@ -518,7 +543,8 @@ def _print_resolve(
             f"  buff_mult  = 1.00"
             f" + {all_b:.4f} (all martial)"
             f" + {wt_b:.4f} ({wt or '—'})"
-            f" + {target_b:.4f} ({target}) = {r.buff_mult:.6f}"
+            f" + {target_b:.4f} ({target})"
+            f"{iw_str} = {r.buff_mult:.6f}"
         )
     if skill.is_mystic:
         print(f"  affix_mult = 1.000000  (mystic — no attunement affix)")
@@ -572,8 +598,9 @@ def _print_simulate(
     skill: SkillFormula,
     target: str = "boss",
     affix_mult: float = 1.0,
+    innerway_bonus: float = 0.0,
 ) -> None:
-    _print_resolve(r, profile, skill, target, affix_mult)
+    _print_resolve(r, profile, skill, target, affix_mult, innerway_bonus)
     print()
     print(f"  Simulation  (n={sim.n_rolls})")
     print(f"  {'-'*60}")
@@ -764,7 +791,8 @@ def _select_skill() -> Optional[SkillFormula]:
 def _ask_combat_context(skill: SkillFormula) -> Tuple[float, str]:
     """
     Ask target (boss/pvp) and, for martial art skills, attunement affix DMG bonus.
-    Returns (affix_mult, target).  Default: affix_mult=1.0, target='boss'.
+    Returns (affix_mult, target, innerway_bonus).
+    Default: affix_mult=1.0, target='boss', innerway_bonus=0.0.
     """
     try:
         raw = input("  Target [boss/pvp] (Enter=boss): ").strip().lower()
@@ -779,9 +807,53 @@ def _ask_combat_context(skill: SkillFormula) -> Tuple[float, str]:
                 bonus = 0.0
             affix_mult = 1.0 + bonus
 
-        return affix_mult, target
+        innerway_bonus = _ask_innerway_bonus()
+        return affix_mult, target, innerway_bonus
     except (KeyboardInterrupt, EOFError):
-        return 1.0, "boss"
+        return 1.0, "boss", 0.0
+
+
+def _ask_innerway_bonus() -> float:
+    """
+    Show innerway list and let the user select entries by ID (space-separated).
+    Returns the sum of selected dmg_bonus values, or 0.0 if none selected / DB empty.
+    """
+    entries = list_innerway_entries()
+    if not entries:
+        return 0.0
+
+    print()
+    print(f"  {'ID':<4}  {'Name':<36}  {'Bonus':>8}  Desc")
+    print(f"  {'-'*4}  {'-'*36}  {'-'*8}  {'-'*20}")
+    for e in entries:
+        print(f"  {e.id:<4}  {e.name:<36}  {e.dmg_bonus*100:>+7.2f}%  {e.desc}")
+    print()
+
+    try:
+        raw = input(
+            "  Innerway IDs to apply (space-separated, Enter=none): "
+        ).strip()
+    except (KeyboardInterrupt, EOFError):
+        return 0.0
+
+    if not raw:
+        return 0.0
+
+    try:
+        ids = [int(x) for x in raw.split()]
+    except ValueError:
+        print("  Invalid input, no innerway applied.")
+        return 0.0
+
+    selected = get_innerway_entries_by_ids(ids)
+    if not selected:
+        print("  No valid IDs found, no innerway applied.")
+        return 0.0
+
+    total = sum(e.dmg_bonus for e in selected)
+    names = ", ".join(e.name for e in selected)
+    print(f"  Innerway applied: {names}  (total bonus: {total*100:+.2f}%)")
+    return total
 
 
 def _mode_simulate(
@@ -789,6 +861,7 @@ def _mode_simulate(
     skill: SkillFormula,
     affix_mult: float,
     target: str,
+    innerway_bonus: float = 0.0,
 ) -> None:
     try:
         raw = input("  Number of rolls [100]: ").strip()
@@ -802,9 +875,9 @@ def _mode_simulate(
         print("  Invalid number of rolls. Using 100.")
         n_rolls = 100
 
-    r = resolve(profile, skill, affix_mult, target)
-    sim = simulate(profile, skill, n_rolls, affix_mult, target)
-    _print_simulate(r, sim, profile, skill, target, affix_mult)
+    r = resolve(profile, skill, affix_mult, target, innerway_bonus)
+    sim = simulate(profile, skill, n_rolls, affix_mult, target, innerway_bonus)
+    _print_simulate(r, sim, profile, skill, target, affix_mult, innerway_bonus)
 
 
 def _mode_marginal(
@@ -812,6 +885,7 @@ def _mode_marginal(
     skill: SkillFormula,
     affix_mult: float,
     target: str,
+    innerway_bonus: float = 0.0,
 ) -> None:
     gains = list_gains()
     if not gains:
@@ -860,8 +934,8 @@ def _mode_marginal(
         print("  No gains selected.")
         return
 
-    base_result = resolve(profile, skill, affix_mult, target)
-    comparison = compare_gains(profile, skill, selected, affix_mult, target)
+    base_result = resolve(profile, skill, affix_mult, target, innerway_bonus)
+    comparison = compare_gains(profile, skill, selected, affix_mult, target, innerway_bonus)
     _print_comparison(base_result, comparison, profile, skill, target, affix_mult)
 
 
@@ -870,6 +944,7 @@ def _mode_profile_compare(
     skill: SkillFormula,
     affix_mult: float,
     target: str,
+    innerway_bonus: float = 0.0,
 ) -> None:
     print(f"\n{_SEP}\n  Select second profile to compare\n{_SEP}")
     profile2 = _select_profile()
@@ -891,7 +966,7 @@ def _mode_profile_compare(
             pass
 
     r1, r2, _ = compare_profiles(
-        profile, profile2, skill, affix_mult, affix_mult2, target
+        profile, profile2, skill, affix_mult, affix_mult2, target, innerway_bonus
     )
     _print_profile_comparison(
         r1, r2, profile, profile2, skill, target, affix_mult, affix_mult2
@@ -905,6 +980,7 @@ def _cli() -> None:
     init_profile_db()
     init_skill_dbs()
     init_gain_db()
+    init_innerway_db()
 
     print(f"\n{'═'*60}")
     print("  WWM Damage Resolver")
@@ -927,7 +1003,7 @@ def _cli() -> None:
 
             # ── Combat context (re-asked each time skill changes) ──
             print(f"\n{_SEP}\n  Combat context\n{_SEP}")
-            affix_mult, target = _ask_combat_context(skill)
+            affix_mult, target, innerway_bonus = _ask_combat_context(skill)
 
             # ── Mode loop ─────────────────────
             while True:
@@ -936,17 +1012,24 @@ def _cli() -> None:
                     if (not skill.is_mystic and affix_mult != 1.0)
                     else ""
                 )
+                iw_str = (
+                    f"  Innerway: +{innerway_bonus*100:.2f}%"
+                    if innerway_bonus != 0.0
+                    else ""
+                )
                 print(f"\n{_SEP}")
                 print(f"  Profile : {profile.name}")
                 print(f"  Skill   : {skill.name}  ({skill.skill_type})")
                 print(f"  Target  : {target}")
                 if affix_str:
                     print(affix_str)
+                if iw_str:
+                    print(iw_str)
                 print(_SEP)
                 print("  [1] Simulate")
                 print("  [2] Marginal gain comparison")
                 print("  [3] Compare with another profile")
-                print("  [4] Change context  (target / affix)")
+                print("  [4] Change context  (target / affix / innerway)")
                 print("  [5] Change skill")
                 print("  [6] Change profile")
                 print("  [0] Quit")
@@ -958,14 +1041,14 @@ def _cli() -> None:
                     return
 
                 if choice == "1":
-                    _mode_simulate(profile, skill, affix_mult, target)
+                    _mode_simulate(profile, skill, affix_mult, target, innerway_bonus)
                 elif choice == "2":
-                    _mode_marginal(profile, skill, affix_mult, target)
+                    _mode_marginal(profile, skill, affix_mult, target, innerway_bonus)
                 elif choice == "3":
-                    _mode_profile_compare(profile, skill, affix_mult, target)
+                    _mode_profile_compare(profile, skill, affix_mult, target, innerway_bonus)
                 elif choice == "4":
                     print(f"\n{_SEP}\n  Combat context\n{_SEP}")
-                    affix_mult, target = _ask_combat_context(skill)
+                    affix_mult, target, innerway_bonus = _ask_combat_context(skill)
                 elif choice == "5":
                     break  # re-select skill
                 elif choice == "6":
