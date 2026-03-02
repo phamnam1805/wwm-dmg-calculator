@@ -252,4 +252,5 @@ Variance is computed analytically via the **Law of Total Variance** (Var[Uniform
 ## Not modeled
 
 - Target defense / resistance
-- Healer damage formula
+- Healer healing formula
+- Innerway mechanism (DMG bonus & stat modifiers) — planned for a future update
