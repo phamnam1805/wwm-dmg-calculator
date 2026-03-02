@@ -2,6 +2,11 @@
 
 Damage calculator for **Where Winds Meet**.
 
+Computes the **expected (average) damage of a specific skill** based on a character's stats. From there:
+
+- **Marginal gain analysis** — shows how much E[DMG] changes when each stat is increased by a fixed amount, giving actionable guidance on which stat to prioritize next.
+- **Profile comparison** — compares two character profiles (e.g. different gear sets) side-by-side, making it easy to see which equipment upgrade actually yields higher damage output.
+
 **Requires:** Python 3.9+ · No third-party dependencies (stdlib only: `sqlite3`, `random`, `dataclasses`, `pathlib`)
 
 ---
