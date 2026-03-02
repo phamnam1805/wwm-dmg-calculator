@@ -15,13 +15,14 @@ Computes the **expected (average) damage of a specific skill** based on a charac
 
 ## Architecture
 
-The calculator consists of four modules, each with a library API (importable, no prints) and an interactive CLI:
+The calculator consists of five modules, each with a library API (importable, no prints) and an interactive CLI:
 
 | Module | DB file | Purpose |
 |---|---|---|
 | `src/profile_db.py` | `dbs/profiles.db` | Character profiles (ATK stats + all bonuses) |
 | `src/skill_db.py` | `dbs/martial_art_skills.db` · `dbs/mystic_skills.db` | Skill damage formulas |
 | `src/marginal_gain_db.py` | `dbs/marginal_gains.db` | Stat delta entries for upgrade comparison |
+| `src/innerway_db.py` | `dbs/innerway.db` | Innerway DMG bonus entries |
 | `src/dmg_resolver.py` | *(no own DB)* | Interactive damage resolver — ties everything together |
 
 Database files are stored in `dbs/` and committed to the repository.
@@ -123,6 +124,21 @@ Each **MarginalGain** has a name and a set of stat deltas (e.g. `bellstrike_max 
 
 ---
 
+### `src/innerway_db.py` — Innerway DMG bonuses
+
+```bash
+python src/innerway_db.py list
+python src/innerway_db.py show   <id>
+python src/innerway_db.py add
+python src/innerway_db.py edit   <id>
+python src/innerway_db.py remove <id>
+python src/innerway_db.py init
+```
+
+Each **InnerwayEntry** stores a `name`, a human-readable `desc`, and a `dmg_bonus` (additive decimal, e.g. `0.20` = +20%). When resolving damage, selected entries are summed and added into `buff_mult`. Note: only the direct DMG bonus effect is modeled — innerway stat modifiers are not (see [Not modeled](#not-modeled)).
+
+---
+
 ### `src/dmg_resolver.py` — Damage resolver
 
 ```bash
@@ -138,6 +154,7 @@ Select Profile → Select Skill → Set combat context → Mode loop
 **Combat context** (asked once per skill selection, can be changed via `[4]`):
 - **Target**: `boss` (default) or `pvp` — determines which target DMG bonus is added
 - **Attunement affix DMG bonus** (martial art skills only): enter as decimal (`0.058` = 5.8%)
+- **Innerway DMG bonus**: shows list from `innerway.db`, select by ID (space-separated) or Enter to skip — selected bonuses are summed and added to `buff_mult`
 
 **Mode loop options:**
 
@@ -145,8 +162,8 @@ Select Profile → Select Skill → Set combat context → Mode loop
 |---|---|
 | `[1] Simulate` | Monte Carlo simulation. Asks number of rolls (default 100). Shows theory vs simulation comparison with hit-type breakdown. |
 | `[2] Marginal gain comparison` | Lists all gains in DB, lets you pick by ID (comma-separated or `all`). Shows E[DMG] ↑ and std ↓ for each option. |
-| `[3] Compare with another profile` | Pick a second profile (and its affix bonus). Shows side-by-side Δ and Δ% for all stats. |
-| `[4] Change context` | Re-ask target and affix bonus. |
+| `[3] Compare with another profile` | Pick a second profile (each with its own affix and innerway bonus). Shows side-by-side Δ and Δ% for all stats. |
+| `[4] Change context` | Re-ask target, affix bonus, and innerway. |
 | `[5] Change skill` | Back to skill selection. |
 | `[6] Change profile` | Back to profile selection. |
 
@@ -176,12 +193,14 @@ For **DOT skills**: no `phys_bonus`, no x1.5 on main attribute.
 ```
 # Martial art skill:
 buff_mult = 1 + all_martial_art_dmg_bonus + {weapon_type}_dmg_bonus + target_bonus
+          + innerway_bonus
 
 # Mystic skill:
-buff_mult = 1 + {mystic_type}_dmg_bonus + target_bonus
+buff_mult = 1 + {mystic_type}_dmg_bonus + target_bonus + innerway_bonus
 
-# target_bonus = boss_dmg_bonus  (when target = boss)
-#              = pvp_dmg_bonus   (when target = pvp)
+# target_bonus  = boss_dmg_bonus  (when target = boss)
+#               = pvp_dmg_bonus   (when target = pvp)
+# innerway_bonus = sum of selected innerway dmg_bonus values (0.0 if none selected)
 ```
 
 ### Affix multiplier
@@ -260,4 +279,4 @@ Variance is computed analytically via the **Law of Total Variance** (Var[Uniform
 
 - Target defense / resistance
 - Healer healing formula
-- Innerway mechanism (DMG bonus & stat modifiers) — planned for a future update
+- Innerway **stat modifiers** in combat — e.g. Yi River stacks granted by Morale Chant that increase ATK stats during the fight. Only the direct DMG bonus effect of innerway is currently supported.
