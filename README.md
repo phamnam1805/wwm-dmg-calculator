@@ -2,216 +2,254 @@
 
 Damage calculator for **Where Winds Meet**.
 
-## Usage
+**Requires:** Python 3.9+ · No third-party dependencies (stdlib only: `sqlite3`, `random`, `dataclasses`, `pathlib`)
+
+---
+
+## Architecture
+
+The calculator consists of four modules, each with a library API (importable, no prints) and an interactive CLI:
+
+| Module | DB file | Purpose |
+|---|---|---|
+| `src/profile_db.py` | `dbs/profiles.db` | Character profiles (ATK stats + all bonuses) |
+| `src/skill_db.py` | `dbs/martial_art_skills.db` · `dbs/mystic_skills.db` | Skill damage formulas |
+| `src/marginal_gain_db.py` | `dbs/marginal_gains.db` | Stat delta entries for upgrade comparison |
+| `src/dmg_resolver.py` | *(no own DB)* | Interactive damage resolver — ties everything together |
+
+Database files are stored in `dbs/` (gitignored — not committed to the repository).
+
+---
+
+## Quick start
 
 ```bash
-python calculator.py                    # current stats + active skill
-python calculator.py change.cnf         # compare base vs override
-python calculator.py -s "skill name"    # select skill formula
-python calculator.py change.cnf -v      # include double marginal gain
-```
+# 1. Create a character profile
+python src/profile_db.py add
 
-## Config files
+# 2. Add a skill formula
+python src/skill_db.py martial add   # martial art skill
+python src/skill_db.py mystic  add   # mystic skill
 
-| File                 | Description                            |
-|----------------------|----------------------------------------|
-| `base.cnf`           | Character stats                        |
-| `skill_formulas.cnf` | Damage formula for each skill          |
-| `marginal.cnf`       | Equal-cost upgrade options to compare  |
+# 3. (Optional) Add marginal gain entries for upgrade comparison
+python src/marginal_gain_db.py add
 
-Override files (partial stats applied on top of base):
-`affi.cnf`, `crit.cnf`, `prec.cnf`, `phys.cnf`, `bellstrike.cnf`, `bamboocut.cnf`, `pendant.cnf`, etc.
-
-### Config format — character stats
-
-```ini
-[character]
-main_attribute = bellstrike
-
-[physical]
-min = 665
-max = 1885
-pen       = 5.1    # optional, default 0
-dmg_bonus = 0.0    # optional, default 0
-
-[attribute.bellstrike]
-min = 231
-max = 457
-pen       = 41     # optional, default 0
-dmg_bonus = 0.066  # optional, default 0
-
-[attribute.stonesplit]
-min = 50
-max = 50
-
-[rates]
-affinity_rate        = 0.374
-precision_rate       = 0.942
-critical_rate        = 0.382
-affinity_mult        = 1.402
-critical_mult        = 1.5
-direct_affinity_rate = 0.023
-direct_critical_rate = 0.046
-```
-
-### Config format — skill formulas
-
-```ini
-[vagrant sword 3rd hit]
-phys_coeff = 1.8283
-phys_bonus = 320
-attr_coeff = 2.7425
-attr_bonus = 185
-
-[soaring spin 2nd hit]
-phys_coeff = 3.6831
-phys_bonus = 454
-attr_coeff = 1
-attr_bonus = 0
-is_mystic  = true    # no x1.5 on main attribute, attr_bonus only on main attr
-```
-
-### Config format — marginal gain
-
-```ini
-# Each section = one equal-cost option. Values are deltas (+/-)
-[+2.8% affinity]
-affinity_rate = +0.028
-
-[+47 max physical ATK]
-physical_max = +47
-
-[+31 max bellstrike ATK]
-bellstrike_max = +31
-
-# Also supported: physical_pen, physical_dmg_bonus, <attr>_pen, <attr>_dmg_bonus
+# 4. Run the damage resolver
+python src/dmg_resolver.py
 ```
 
 ---
 
-## Damage Formula
+## Module reference
 
-### Per-stat multiplier
+### `src/profile_db.py` — Character profiles
 
-Each attack stat (physical, bellstrike, stonesplit, …) has its own `pen` and `dmg_bonus`:
-
-```
-dmg_mult = (1 + pen / 200) * (1 + dmg_bonus)
-```
-
-When both are 0 (default), `dmg_mult = 1.0` — no effect.
-
-### Physical component
-
-```
-phys_dmg = (phys_atk * phys_coeff + phys_bonus) * physical.dmg_mult()
+```bash
+python src/profile_db.py list
+python src/profile_db.py show   <id>
+python src/profile_db.py add
+python src/profile_db.py edit   <id>
+python src/profile_db.py remove <id>
+python src/profile_db.py search <name>
+python src/profile_db.py init           # initialise DB (auto-called on first use)
 ```
 
-### Attribute component
+A **CharProfile** stores:
 
-Each attribute is computed independently then summed:
+| Group | Fields |
+|---|---|
+| Physical ATK | `physical_min`, `physical_max`, `physical_pen`, `physical_dmg_bonus` |
+| Attribute ATK × 4 | `{attr}_min/max/pen/dmg_bonus` for each of: `bellstrike` `stonesplit` `bamboocut` `silkbind` |
+| Combat rates | `affinity_rate`, `direct_affinity_rate`, `precision_rate`, `critical_rate`, `direct_critical_rate`, `affinity_mult`, `critical_mult` |
+| Martial art DMG bonus | `all_martial_art_dmg_bonus`, `{weapon}_dmg_bonus` for each weapon type |
+| Mystic DMG bonus | `{mystic_type}_dmg_bonus` for each mystic type |
+| Target DMG bonus | `boss_dmg_bonus`, `pvp_dmg_bonus` |
+
+Rates are stored as decimals (`0.374` = 37.4%). Rate caps are enforced automatically on load.
+
+---
+
+### `src/skill_db.py` — Skill formulas
+
+```bash
+python src/skill_db.py list                    # all skills (martial + mystic)
+python src/skill_db.py martial list
+python src/skill_db.py martial show   <id>
+python src/skill_db.py martial add
+python src/skill_db.py martial edit   <id>
+python src/skill_db.py martial remove <id>
+python src/skill_db.py mystic  list
+python src/skill_db.py mystic  show   <id>
+python src/skill_db.py mystic  add
+python src/skill_db.py mystic  edit   <id>
+python src/skill_db.py mystic  remove <id>
+```
+
+A **SkillFormula** stores:
+
+| Field | Description |
+|---|---|
+| `phys_coeff` | Physical ATK multiplier |
+| `phys_bonus` | Flat physical ATK bonus (added before `phys_coeff`) |
+| `attr_coeff` | Main attribute multiplier (derived: `phys_coeff × 1.5`; stored for reference) |
+| `attr_bonus` | Flat main-attribute ATK bonus |
+| `skill_type` | `martial_art` or `mystic` |
+| `attribute_type` | Main attribute (martial art only): `bellstrike` / `stonesplit` / `bamboocut` / `silkbind` |
+| `weapon_type` | Weapon type (martial art only, required) |
+| `mystic_type` | Sub-type (mystic only): `area_debuff` / `area_dmg` / `single_target_control` / `single_target_burst` |
+| `is_dot` | DOT flag — disables `phys_bonus` and attribute x1.5 scaling |
+
+---
+
+### `src/marginal_gain_db.py` — Marginal gains
+
+```bash
+python src/marginal_gain_db.py list
+python src/marginal_gain_db.py show   <id>
+python src/marginal_gain_db.py add
+python src/marginal_gain_db.py edit   <id>
+python src/marginal_gain_db.py remove <id>
+python src/marginal_gain_db.py init
+```
+
+Each **MarginalGain** has a name and a set of stat deltas (e.g. `bellstrike_max +26.6`, `sword_dmg_bonus +0.038`). Deltas are applied on top of a profile to measure E[DMG] change per upgrade option.
+
+---
+
+### `src/dmg_resolver.py` — Damage resolver
+
+```bash
+python src/dmg_resolver.py
+```
+
+Interactive CLI with the following flow:
 
 ```
-# Normal skill:
-attr_contribution = attr_coeff × (main_attr_atk + attr_bonus) × main_attr.dmg_mult()
-                  + phys_coeff × other_attr_atk               × other_attr.dmg_mult()
-# attr_coeff = phys_coeff × 1.5  (enforced automatically)
-# attr_bonus is scaled by attr_coeff (added to atk before multiplication)
-
-# Mystic skill (is_mystic = true):
-attr_contribution = phys_coeff × attr_atk × attr.dmg_mult()   # same coeff for all attrs, attr_bonus = 0
+Select Profile → Select Skill → Set combat context → Mode loop
 ```
 
-### Total damage range
+**Combat context** (asked once per skill selection, can be changed via `[4]`):
+- **Target**: `boss` (default) or `pvp` — determines which target DMG bonus is added
+- **Attunement affix DMG bonus** (martial art skills only): enter as decimal (`0.058` = 5.8%)
+
+**Mode loop options:**
+
+| Option | Description |
+|---|---|
+| `[1] Simulate` | Monte Carlo simulation. Asks number of rolls (default 100). Shows theory vs simulation comparison with hit-type breakdown. |
+| `[2] Marginal gain comparison` | Lists all gains in DB, lets you pick by ID (comma-separated or `all`). Shows E[DMG] ↑ and std ↓ for each option. |
+| `[3] Compare with another profile` | Pick a second profile (and its affix bonus). Shows side-by-side Δ and Δ% for all stats. |
+| `[4] Change context` | Re-ask target and affix bonus. |
+| `[5] Change skill` | Back to skill selection. |
+| `[6] Change profile` | Back to profile selection. |
+
+---
+
+## Damage formula
+
+### Base damage
 
 ```
-total_max = phys_max + attr_max
-total_min = phys_min + attr_min
-E[roll]   = (total_min + total_max) / 2
+phys_dmg = (phys_coeff × phys_atk + phys_bonus) × phys_dmg_mult
+
+attr_dmg  = attr_coeff × (main_attr_atk + attr_bonus) × main_attr_dmg_mult   # main attr
+          + phys_coeff × other_attr_atk                × other_attr_dmg_mult  # other attrs
+
+base_dmg = phys_dmg + attr_dmg
 ```
 
-### Effective rates (after cap)
+Where `phys_dmg_mult = (1 + pen/200) × (1 + dmg_bonus)` for each stat.
+
+For **mystic skills**: same `phys_coeff` for all attributes, no x1.5 scaling, `attr_bonus = 0`.
+
+For **DOT skills**: no `phys_bonus`, no x1.5 on main attribute.
+
+### Buff multiplier
 
 ```
-eff_affinity  = min(affinity_rate,  40%) + min(direct_affinity, 10%)
+# Martial art skill:
+buff_mult = 1 + all_martial_art_dmg_bonus + {weapon_type}_dmg_bonus + target_bonus
+
+# Mystic skill:
+buff_mult = 1 + {mystic_type}_dmg_bonus + target_bonus
+
+# target_bonus = boss_dmg_bonus  (when target = boss)
+#              = pvp_dmg_bonus   (when target = pvp)
+```
+
+### Affix multiplier
+
+```
+affix_mult = 1 + attunement_affix_bonus   # martial art skills
+affix_mult = 1.0                           # mystic skills (no attunement affix)
+```
+
+### Scaled damage
+
+```
+scaled_max    = base_max    × buff_mult × affix_mult
+scaled_e_roll = base_e_roll × buff_mult × affix_mult   # e_roll = (min + max) / 2
+scaled_min    = base_min    × buff_mult × affix_mult
+```
+
+### Hit type probabilities (after rate caps)
+
+```
+eff_affinity  = min(affinity_rate, 40%) + min(direct_affinity_rate, 10%)
 eff_precision = min(precision_rate, 100%)
-eff_crit      = min(crit_rate,      80%) + min(direct_crit,     20%)
-```
+eff_crit      = min(critical_rate, 80%) + min(direct_critical_rate, 20%)
 
-### Hit type probabilities
-
-```
 P(orange) = eff_affinity
-P(yellow) = (1 - eff_affinity) * eff_precision * eff_crit
-P(white)  = (1 - eff_affinity) * eff_precision * (1 - eff_crit)
-P(gray)   = (1 - eff_affinity) * (1 - eff_precision)
+P(yellow) = (1 - eff_affinity) × eff_precision × eff_crit
+P(white)  = (1 - eff_affinity) × eff_precision × (1 - eff_crit)
+P(gray)   = (1 - eff_affinity) × (1 - eff_precision)
 ```
 
 ### Damage per hit type
 
-| Color  | Type     | Damage                        | Range                          |
-|--------|----------|-------------------------------|--------------------------------|
-| ORANGE | affinity | `total_max × affinity_mult`   | fixed — always max             |
-| YELLOW | crit     | `roll(min,max) × crit_mult`   | `total_min×cm ~ total_max×cm`  |
-| WHITE  | normal   | `roll(min, max)`              | `total_min ~ total_max`        |
-| GRAY   | abrasion | `total_min`                   | fixed — always min             |
+| Color | Type | Damage formula |
+|---|---|---|
+| **ORANGE** | affinity | `scaled_max × affinity_mult` (fixed — always max roll) |
+| **YELLOW** | crit | `roll(scaled_min, scaled_max) × critical_mult` |
+| **WHITE** | normal | `roll(scaled_min, scaled_max)` |
+| **GRAY** | abrasion | `scaled_min` (fixed — always min roll) |
 
-### Expected damage
+### Expected damage & standard deviation
 
 ```
-E[DMG] = P(orange) × total_max × affinity_mult
-       + P(yellow) × E[roll]   × crit_mult
-       + P(white)  × E[roll]
-       + P(gray)   × total_min
+E[DMG] = P(orange) × scaled_max × affinity_mult
+       + P(yellow) × scaled_e_roll × critical_mult
+       + P(white)  × scaled_e_roll
+       + P(gray)   × scaled_min
 ```
 
-### Skill types
-
-| Type         | `phys_bonus` | main attr ×1.5 | `attr_bonus` (scaled by `attr_coeff`) |
-|--------------|:------------:|:--------------:|---------------------------------------|
-| Normal skill | yes          | yes            | main attr only                        |
-| Mystic skill | yes          | **no**         | **none** (`attr_bonus` forced to 0)   |
-| DOT          | **no**       | **no**         | all attrs (×1.0)                      |
+Variance is computed analytically via the **Law of Total Variance** (Var[Uniform(lo,hi)] = (hi−lo)²/12). Simulation uses `random.SystemRandom` (/dev/urandom).
 
 ---
 
-## Stability stats (from simulation)
+## Rate caps
 
-| Stat | Description                                                       |
-|------|-------------------------------------------------------------------|
-| mean | Average damage over n rolls (converges to theoretical E[DMG])     |
-| std  | Standard deviation — high std means inconsistent/swingy damage    |
-| min  | Lowest damage rolled (usually GRAY = total_min)                   |
-| max  | Highest damage rolled (usually ORANGE = affinity dmg)             |
-| p10  | 10% of hits fall below this value                                 |
-| p90  | 90% of hits fall below this value (p10~p90 = practical range)     |
-
----
+| Rate | Normal cap | Direct cap |
+|---|---|---|
+| `affinity_rate` | 40% | `direct_affinity_rate` +10% |
+| `precision_rate` | 100% | — |
+| `critical_rate` | 80% | `direct_critical_rate` +20% |
 
 ## Attributes
 
 `bellstrike` · `stonesplit` · `bamboocut` · `silkbind`
 
-## Rate caps
+## Weapon types
 
-| Rate           | Normal cap | Direct cap |
-|----------------|------------|------------|
-| affinity_rate  | 40%        | +10%       |
-| precision_rate | 100%       | —          |
-| critical_rate  | 80%        | +20%       |
+`sword` · `dual_blades` · `spear` · `fan` · `umbrella` · `heng_blade` · `mo_blade` · `rope_dart`
 
-## Notes
+## Mystic sub-types
 
-The following modifiers are **not modeled** and must be accounted for manually:
+`area_debuff` · `area_dmg` · `single_target_control` · `single_target_burst`
 
-- Target defense
-- Damage boost multipliers (增伤) in general, including:
-  - All Martial Art Skill DMG Boost
-  - Specified Weapon Martial Art Boost
-  - Mystic Skill DMG Boost
-  - DMG Boost vs Boss Units
-  - PvP Boost
-- **DOT damage** (bleed, burn, etc.) uses a different formula — no `phys_bonus`, no x1.5 on main attr — not supported yet
-- **Healer damage** follows a separate formula — not supported
+---
 
-Simulation uses `/dev/urandom` (SystemRandom)
+## Not modeled
+
+- Target defense / resistance
+- Healer damage formula

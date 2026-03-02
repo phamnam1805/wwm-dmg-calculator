@@ -39,13 +39,17 @@ from typing import Dict, List, Optional, Tuple
 from profile_db import (
     CharProfile,
     init_db as init_profile_db,
-    list_profiles, get_profile_by_id,
-    ATTRIBUTES, WEAPON_TYPES, MYSTIC_TYPES,
+    list_profiles,
+    get_profile_by_id,
+    ATTRIBUTES,
+    WEAPON_TYPES,
+    MYSTIC_TYPES,
 )
 from skill_db import (
     SkillFormula,
     init_all as init_skill_dbs,
-    list_skills, get_skill_by_id,
+    list_skills,
+    get_skill_by_id,
 )
 from marginal_gain_db import (
     MarginalGain,
@@ -56,11 +60,11 @@ from marginal_gain_db import (
 # ─────────────────────────────────────────────
 # Rate caps  (mirrors calculator.py)
 # ─────────────────────────────────────────────
-AFFINITY_CAP        = 0.40
+AFFINITY_CAP = 0.40
 DIRECT_AFFINITY_CAP = 0.10
-CRIT_CAP            = 0.80
-DIRECT_CRIT_CAP     = 0.20
-PRECISION_CAP       = 1.00
+CRIT_CAP = 0.80
+DIRECT_CRIT_CAP = 0.20
+PRECISION_CAP = 1.00
 
 
 # ─────────────────────────────────────────────
@@ -69,58 +73,62 @@ PRECISION_CAP       = 1.00
 @dataclass
 class DamageResult:
     """Analytical expected damage breakdown."""
+
     # Expected value & dispersion
-    e_dmg:          float
-    std:            float
+    e_dmg: float
+    std: float
     # Hit-type probabilities (%)
-    p_orange:       float
-    p_yellow:       float
-    p_white:        float
-    p_gray:         float
+    p_orange: float
+    p_yellow: float
+    p_white: float
+    p_gray: float
     # Per-type representative damage
-    dmg_orange:     float
-    dmg_yellow:     float
+    dmg_orange: float
+    dmg_yellow: float
     dmg_yellow_min: float
     dmg_yellow_max: float
-    dmg_white:      float
-    dmg_white_min:  float
-    dmg_white_max:  float
-    dmg_gray:       float
+    dmg_white: float
+    dmg_white_min: float
+    dmg_white_max: float
+    dmg_gray: float
     # Multiplier breakdown
-    buff_mult:      float
-    affix_mult:     float
+    buff_mult: float
+    affix_mult: float
     # Base damage (before buff / affix / hit-type mult)
-    base_max:       float
-    base_e_roll:    float
-    base_min:       float
+    base_max: float
+    base_e_roll: float
+    base_min: float
 
 
 @dataclass
 class SimulateResult:
     """Monte Carlo simulation results."""
-    n_rolls:      int
-    mean:         float
-    std:          float
-    min_dmg:      float
-    max_dmg:      float
-    p10:          float
-    p90:          float
-    total:        float
-    p_orange:     float
-    p_yellow:     float
-    p_white:      float
-    p_gray:       float
+
+    n_rolls: int
+    mean: float
+    std: float
+    min_dmg: float
+    max_dmg: float
+    p10: float
+    p90: float
+    total: float
+    p_orange: float
+    p_yellow: float
+    p_white: float
+    p_gray: float
     total_orange: float
     total_yellow: float
-    total_white:  float
-    total_gray:   float
+    total_white: float
+    total_gray: float
 
 
 # ─────────────────────────────────────────────
 # Internal stat helpers
 # ─────────────────────────────────────────────
 def _eff_affinity(p: CharProfile) -> float:
-    return min(p.affinity_rate, AFFINITY_CAP) + min(p.direct_affinity_rate, DIRECT_AFFINITY_CAP)
+    return min(p.affinity_rate, AFFINITY_CAP) + min(
+        p.direct_affinity_rate, DIRECT_AFFINITY_CAP
+    )
 
 
 def _eff_precision(p: CharProfile) -> float:
@@ -136,7 +144,7 @@ def _phys_dmg_mult(p: CharProfile) -> float:
 
 
 def _attr_dmg_mult(p: CharProfile, attr: str) -> float:
-    pen       = getattr(p, f"{attr}_pen")
+    pen = getattr(p, f"{attr}_pen")
     dmg_bonus = getattr(p, f"{attr}_dmg_bonus")
     return (1 + pen / 200) * (1 + dmg_bonus)
 
@@ -148,13 +156,13 @@ def _buff_mult(p: CharProfile, skill: SkillFormula, target: str = "boss") -> flo
     target_bonus: boss_dmg_bonus if target == 'boss', pvp_dmg_bonus if target == 'pvp'
     """
     if skill.is_mystic:
-        mt    = skill.mystic_type or ""
+        mt = skill.mystic_type or ""
         bonus = getattr(p, f"{mt}_dmg_bonus", 0.0) if mt else 0.0
-        base  = 1.0 + bonus
+        base = 1.0 + bonus
     else:
-        wt    = skill.weapon_type or ""
+        wt = skill.weapon_type or ""
         bonus = getattr(p, f"{wt}_dmg_bonus", 0.0) if wt else 0.0
-        base  = 1.0 + p.all_martial_art_dmg_bonus + bonus
+        base = 1.0 + p.all_martial_art_dmg_bonus + bonus
 
     if target == "boss":
         base += p.boss_dmg_bonus
@@ -168,16 +176,18 @@ def _base_phys(p: CharProfile, skill: SkillFormula, phys_roll: float) -> float:
     return (skill.phys_coeff * phys_roll + skill.phys_bonus) * _phys_dmg_mult(p)
 
 
-def _base_attr(p: CharProfile, skill: SkillFormula, attr_rolls: Dict[str, float]) -> float:
+def _base_attr(
+    p: CharProfile, skill: SkillFormula, attr_rolls: Dict[str, float]
+) -> float:
     """Attribute damage component for given per-attribute atk rolls."""
     total = 0.0
     for attr in ATTRIBUTES:
         roll = attr_rolls[attr]
         if skill.is_mystic:
-            coeff = skill.phys_coeff   # mystic: same coeff for all attrs
+            coeff = skill.phys_coeff  # mystic: same coeff for all attrs
             bonus = 0.0
         else:
-            main  = (attr == skill.attribute_type)
+            main = attr == skill.attribute_type
             coeff = skill.attr_coeff if main else skill.phys_coeff
             bonus = skill.attr_bonus if main else 0.0
         total += (coeff * (roll + bonus)) * _attr_dmg_mult(p, attr)
@@ -198,15 +208,20 @@ def _base_min(p: CharProfile, skill: SkillFormula) -> float:
 
 def _base_e_roll(p: CharProfile, skill: SkillFormula) -> float:
     return _base_phys(p, skill, (p.physical_min + p.physical_max) / 2) + _base_attr(
-        p, skill,
+        p,
+        skill,
         {a: (getattr(p, f"{a}_min") + getattr(p, f"{a}_max")) / 2 for a in ATTRIBUTES},
     )
 
 
-def _base_roll_rng(p: CharProfile, skill: SkillFormula, rng: random.SystemRandom) -> float:
-    phys_roll  = rng.uniform(p.physical_min, p.physical_max)
-    attr_rolls = {a: rng.uniform(getattr(p, f"{a}_min"), getattr(p, f"{a}_max"))
-                  for a in ATTRIBUTES}
+def _base_roll_rng(
+    p: CharProfile, skill: SkillFormula, rng: random.SystemRandom
+) -> float:
+    phys_roll = rng.uniform(p.physical_min, p.physical_max)
+    attr_rolls = {
+        a: rng.uniform(getattr(p, f"{a}_min"), getattr(p, f"{a}_max"))
+        for a in ATTRIBUTES
+    }
     return _base_phys(p, skill, phys_roll) + _base_attr(p, skill, attr_rolls)
 
 
@@ -214,47 +229,51 @@ def _base_roll_rng(p: CharProfile, skill: SkillFormula, rng: random.SystemRandom
 # Library API  (no print statements — safe to import from Web UI)
 # ─────────────────────────────────────────────
 def resolve(
-    profile:    CharProfile,
-    skill:      SkillFormula,
+    profile: CharProfile,
+    skill: SkillFormula,
     affix_mult: float = 1.0,
-    target:     str   = "boss",
+    target: str = "boss",
 ) -> DamageResult:
     """
     Analytical expected damage.
     affix_mult: attunement affix DMG bonus multiplier (martial only; 1.0 = no bonus)
     target: 'boss' or 'pvp' — selects which target DMG bonus is added to buff_mult
     """
-    bm  = _buff_mult(profile, skill, target)
-    am  = affix_mult
-    a   = _eff_affinity(profile)
-    p   = _eff_precision(profile)
-    c   = _eff_crit(profile)
+    bm = _buff_mult(profile, skill, target)
+    am = affix_mult
+    a = _eff_affinity(profile)
+    p = _eff_precision(profile)
+    c = _eff_crit(profile)
     aff = profile.affinity_mult
     crt = profile.critical_mult
 
-    base_mx   = _base_max(profile, skill)
-    base_er   = _base_e_roll(profile, skill)
-    base_mn   = _base_min(profile, skill)
+    base_mx = _base_max(profile, skill)
+    base_er = _base_e_roll(profile, skill)
+    base_mn = _base_min(profile, skill)
 
     # Scale base damage by buff + affix multipliers
-    scaled_max    = base_mx * bm * am
+    scaled_max = base_mx * bm * am
     scaled_e_roll = base_er * bm * am
-    scaled_min    = base_mn * bm * am
+    scaled_min = base_mn * bm * am
 
     # Hit-type representative damage
-    dmg_orange = scaled_max   * aff
+    dmg_orange = scaled_max * aff
     dmg_yellow = scaled_e_roll * crt
-    dmg_white  = scaled_e_roll
-    dmg_gray   = scaled_min
+    dmg_white = scaled_e_roll
+    dmg_gray = scaled_min
 
     # Hit-type probabilities
     prob_orange = a
     prob_yellow = (1 - a) * p * c
-    prob_white  = (1 - a) * p * (1 - c)
-    prob_gray   = (1 - a) * (1 - p)
+    prob_white = (1 - a) * p * (1 - c)
+    prob_gray = (1 - a) * (1 - p)
 
-    e_dmg = (prob_orange * dmg_orange + prob_yellow * dmg_yellow
-           + prob_white  * dmg_white  + prob_gray   * dmg_gray)
+    e_dmg = (
+        prob_orange * dmg_orange
+        + prob_yellow * dmg_yellow
+        + prob_white * dmg_white
+        + prob_gray * dmg_gray
+    )
 
     # ── Variance via Law of Total Variance ──────────────
     # Var[uniform(lo, hi)] = (hi - lo)² / 12
@@ -271,7 +290,7 @@ def resolve(
         if skill.is_mystic:
             coeff = skill.phys_coeff
         else:
-            main  = (attr == skill.attribute_type)
+            main = attr == skill.attribute_type
             coeff = skill.attr_coeff if main else skill.phys_coeff
         m = coeff * _attr_dmg_mult(profile, attr)
         var_roll += var_uni(
@@ -281,110 +300,112 @@ def resolve(
 
     # Scale variance by (buff × affix)²
     var_scaled = var_roll * (bm * am) ** 2
-    e2_scaled  = var_scaled + scaled_e_roll ** 2
+    e2_scaled = var_scaled + scaled_e_roll**2
 
-    e_x2 = (prob_orange * dmg_orange ** 2
-          + prob_yellow * e2_scaled * crt ** 2
-          + prob_white  * e2_scaled
-          + prob_gray   * dmg_gray  ** 2)
-    std = (e_x2 - e_dmg ** 2) ** 0.5
+    e_x2 = (
+        prob_orange * dmg_orange**2
+        + prob_yellow * e2_scaled * crt**2
+        + prob_white * e2_scaled
+        + prob_gray * dmg_gray**2
+    )
+    std = (e_x2 - e_dmg**2) ** 0.5
 
     return DamageResult(
-        e_dmg          = round(e_dmg, 2),
-        std            = round(std,   2),
-        p_orange       = round(prob_orange * 100, 2),
-        p_yellow       = round(prob_yellow * 100, 2),
-        p_white        = round(prob_white  * 100, 2),
-        p_gray         = round(prob_gray   * 100, 2),
-        dmg_orange     = round(dmg_orange, 2),
-        dmg_yellow     = round(dmg_yellow, 2),
-        dmg_yellow_min = round(dmg_gray * crt, 2),
-        dmg_yellow_max = round(scaled_max * crt, 2),
-        dmg_white      = round(dmg_white,  2),
-        dmg_white_min  = round(dmg_gray,   2),
-        dmg_white_max  = round(scaled_max, 2),
-        dmg_gray       = round(dmg_gray,   2),
-        buff_mult      = round(bm, 6),
-        affix_mult     = round(am, 6),
-        base_max       = round(base_mx, 2),
-        base_e_roll    = round(base_er, 2),
-        base_min       = round(base_mn, 2),
+        e_dmg=round(e_dmg, 2),
+        std=round(std, 2),
+        p_orange=round(prob_orange * 100, 2),
+        p_yellow=round(prob_yellow * 100, 2),
+        p_white=round(prob_white * 100, 2),
+        p_gray=round(prob_gray * 100, 2),
+        dmg_orange=round(dmg_orange, 2),
+        dmg_yellow=round(dmg_yellow, 2),
+        dmg_yellow_min=round(dmg_gray * crt, 2),
+        dmg_yellow_max=round(scaled_max * crt, 2),
+        dmg_white=round(dmg_white, 2),
+        dmg_white_min=round(dmg_gray, 2),
+        dmg_white_max=round(scaled_max, 2),
+        dmg_gray=round(dmg_gray, 2),
+        buff_mult=round(bm, 6),
+        affix_mult=round(am, 6),
+        base_max=round(base_mx, 2),
+        base_e_roll=round(base_er, 2),
+        base_min=round(base_mn, 2),
     )
 
 
 def simulate(
-    profile:    CharProfile,
-    skill:      SkillFormula,
-    n_rolls:    int   = 100,
+    profile: CharProfile,
+    skill: SkillFormula,
+    n_rolls: int = 100,
     affix_mult: float = 1.0,
-    target:     str   = "boss",
+    target: str = "boss",
 ) -> SimulateResult:
     """
     Monte Carlo simulation using /dev/urandom (SystemRandom).
     affix_mult / target: same semantics as resolve().
     """
-    bm  = _buff_mult(profile, skill, target)
-    am  = affix_mult
-    a   = _eff_affinity(profile)
-    p   = _eff_precision(profile)
-    c   = _eff_crit(profile)
+    bm = _buff_mult(profile, skill, target)
+    am = affix_mult
+    a = _eff_affinity(profile)
+    p = _eff_precision(profile)
+    c = _eff_crit(profile)
     aff = profile.affinity_mult
     crt = profile.critical_mult
 
     base_mx = _base_max(profile, skill)
     base_mn = _base_min(profile, skill)
 
-    rng     = random.SystemRandom()
-    counts  = {"orange": 0, "yellow": 0, "white": 0, "gray": 0}
+    rng = random.SystemRandom()
+    counts = {"orange": 0, "yellow": 0, "white": 0, "gray": 0}
     dmg_sum = {"orange": 0.0, "yellow": 0.0, "white": 0.0, "gray": 0.0}
     dmg_log: List[float] = []
 
     for _ in range(n_rolls):
         if rng.random() < a:
-            dmg   = base_mx * bm * am * aff
+            dmg = base_mx * bm * am * aff
             color = "orange"
         elif rng.random() >= p:
-            dmg   = base_mn * bm * am
+            dmg = base_mn * bm * am
             color = "gray"
         else:
             roll = _base_roll_rng(profile, skill, rng)
             scaled = roll * bm * am
             if rng.random() < c:
-                dmg   = scaled * crt
+                dmg = scaled * crt
                 color = "yellow"
             else:
-                dmg   = scaled
+                dmg = scaled
                 color = "white"
-        counts[color]  += 1
+        counts[color] += 1
         dmg_sum[color] += dmg
         dmg_log.append(dmg)
 
     dmg_log.sort()
-    n     = len(dmg_log)
-    mean  = sum(dmg_log) / n
-    std   = (sum((x - mean) ** 2 for x in dmg_log) / n) ** 0.5
+    n = len(dmg_log)
+    mean = sum(dmg_log) / n
+    std = (sum((x - mean) ** 2 for x in dmg_log) / n) ** 0.5
     total = sum(dmg_log)
 
     def pct(q: float) -> float:
         return dmg_log[min(int(q / 100 * n), n - 1)]
 
     return SimulateResult(
-        n_rolls      = n_rolls,
-        mean         = round(mean, 2),
-        std          = round(std,  2),
-        min_dmg      = round(dmg_log[0],  2),
-        max_dmg      = round(dmg_log[-1], 2),
-        p10          = round(pct(10), 2),
-        p90          = round(pct(90), 2),
-        total        = round(total, 2),
-        p_orange     = round(counts["orange"] / n * 100, 2),
-        p_yellow     = round(counts["yellow"] / n * 100, 2),
-        p_white      = round(counts["white"]  / n * 100, 2),
-        p_gray       = round(counts["gray"]   / n * 100, 2),
-        total_orange = round(dmg_sum["orange"], 2),
-        total_yellow = round(dmg_sum["yellow"], 2),
-        total_white  = round(dmg_sum["white"],  2),
-        total_gray   = round(dmg_sum["gray"],   2),
+        n_rolls=n_rolls,
+        mean=round(mean, 2),
+        std=round(std, 2),
+        min_dmg=round(dmg_log[0], 2),
+        max_dmg=round(dmg_log[-1], 2),
+        p10=round(pct(10), 2),
+        p90=round(pct(90), 2),
+        total=round(total, 2),
+        p_orange=round(counts["orange"] / n * 100, 2),
+        p_yellow=round(counts["yellow"] / n * 100, 2),
+        p_white=round(counts["white"] / n * 100, 2),
+        p_gray=round(counts["gray"] / n * 100, 2),
+        total_orange=round(dmg_sum["orange"], 2),
+        total_yellow=round(dmg_sum["yellow"], 2),
+        total_white=round(dmg_sum["white"], 2),
+        total_gray=round(dmg_sum["gray"], 2),
     )
 
 
@@ -395,6 +416,7 @@ def apply_gain(profile: CharProfile, gain: MarginalGain) -> CharProfile:
     Does NOT modify the original profile.
     """
     from dataclasses import fields as dc_fields
+
     known = {f.name for f in dc_fields(CharProfile)}
     kw: Dict[str, float] = {}
     for field, delta in gain.deltas.items():
@@ -404,11 +426,11 @@ def apply_gain(profile: CharProfile, gain: MarginalGain) -> CharProfile:
 
 
 def compare_gains(
-    profile:    CharProfile,
-    skill:      SkillFormula,
-    gains:      List[MarginalGain],
+    profile: CharProfile,
+    skill: SkillFormula,
+    gains: List[MarginalGain],
     affix_mult: float = 1.0,
-    target:     str   = "boss",
+    target: str = "boss",
 ) -> List[Tuple[MarginalGain, DamageResult, float]]:
     """
     Compare a list of marginal gains against the base profile.
@@ -419,11 +441,30 @@ def compare_gains(
     results = []
     for gain in gains:
         modified = apply_gain(profile, gain)
-        result   = resolve(modified, skill, affix_mult, target)
-        delta    = result.e_dmg - base_e
+        result = resolve(modified, skill, affix_mult, target)
+        delta = result.e_dmg - base_e
         results.append((gain, result, delta))
     results.sort(key=lambda x: -x[2])
     return results
+
+
+def compare_profiles(
+    profile1: CharProfile,
+    profile2: CharProfile,
+    skill: SkillFormula,
+    affix_mult1: float = 1.0,
+    affix_mult2: float = 1.0,
+    target: str = "boss",
+) -> Tuple[DamageResult, DamageResult, float]:
+    """
+    Compare two profiles for the same skill and combat context.
+    Each profile has its own affix_mult (attunement affix DMG bonus).
+    Returns (result1, result2, delta_e_dmg) where delta = result2.e_dmg - result1.e_dmg.
+    """
+    r1 = resolve(profile1, skill, affix_mult1, target)
+    r2 = resolve(profile2, skill, affix_mult2, target)
+    delta = round(r2.e_dmg - r1.e_dmg, 2)
+    return r1, r2, delta
 
 
 # ─────────────────────────────────────────────
@@ -434,23 +475,23 @@ _DIV = "-" * 60
 
 
 def _print_profile_line(p: CharProfile) -> None:
-    eff_aff  = _eff_affinity(p)
+    eff_aff = _eff_affinity(p)
     eff_crit = _eff_crit(p)
     print(f"  {p.id:>4}  {p.name:<28}  {eff_aff*100:>7.1f}%  {eff_crit*100:>8.1f}%")
 
 
 def _print_skill_line(f: SkillFormula) -> None:
     stype = "mystic" if f.is_mystic else "martial"
-    sub   = f.mystic_type or f.weapon_type or ""
-    dot   = "  DOT" if f.is_dot else ""
+    sub = f.mystic_type or f.weapon_type or ""
+    dot = "  DOT" if f.is_dot else ""
     print(f"  {f.id:>4}  {f.name:<30}  {stype:<10}  {sub:<24}{dot}")
 
 
 def _print_resolve(
-    r:          DamageResult,
-    profile:    CharProfile,
-    skill:      SkillFormula,
-    target:     str   = "boss",
+    r: DamageResult,
+    profile: CharProfile,
+    skill: SkillFormula,
+    target: str = "boss",
     affix_mult: float = 1.0,
 ) -> None:
     print(f"\n{_SEP}")
@@ -460,106 +501,199 @@ def _print_resolve(
     # buff_mult breakdown
     target_b = profile.boss_dmg_bonus if target == "boss" else profile.pvp_dmg_bonus
     if skill.is_mystic:
-        mt   = skill.mystic_type or ""
+        mt = skill.mystic_type or ""
         mt_b = getattr(profile, f"{mt}_dmg_bonus", 0.0) if mt else 0.0
-        print(f"  buff_mult  = 1.00"
-              f" + {mt_b:.4f} ({mt or '—'})"
-              f" + {target_b:.4f} ({target}) = {r.buff_mult:.6f}")
+        print(
+            f"  buff_mult  = 1.00"
+            f" + {mt_b:.4f} ({mt or '—'})"
+            f" + {target_b:.4f} ({target}) = {r.buff_mult:.6f}"
+        )
     else:
-        wt    = skill.weapon_type or ""
-        wt_b  = getattr(profile, f"{wt}_dmg_bonus", 0.0) if wt else 0.0
+        wt = skill.weapon_type or ""
+        wt_b = getattr(profile, f"{wt}_dmg_bonus", 0.0) if wt else 0.0
         all_b = profile.all_martial_art_dmg_bonus
-        print(f"  buff_mult  = 1.00"
-              f" + {all_b:.4f} (all martial)"
-              f" + {wt_b:.4f} ({wt or '—'})"
-              f" + {target_b:.4f} ({target}) = {r.buff_mult:.6f}")
+        print(
+            f"  buff_mult  = 1.00"
+            f" + {all_b:.4f} (all martial)"
+            f" + {wt_b:.4f} ({wt or '—'})"
+            f" + {target_b:.4f} ({target}) = {r.buff_mult:.6f}"
+        )
     if skill.is_mystic:
         print(f"  affix_mult = 1.000000  (mystic — no attunement affix)")
     else:
         affix_b = affix_mult - 1.0
-        print(f"  affix_mult = {affix_mult:.6f}"
-              + (f"  (attunement +{affix_b:.4f})" if affix_b != 0.0 else "  (no attunement affix)"))
+        print(
+            f"  affix_mult = {affix_mult:.6f}"
+            + (
+                f"  (attunement +{affix_b:.4f})"
+                if affix_b != 0.0
+                else "  (no attunement affix)"
+            )
+        )
     print()
-    print(f"  Base DMG  :  max={r.base_max:.1f}  E[roll]={r.base_e_roll:.1f}  min={r.base_min:.1f}")
+    print(
+        f"  Base DMG  :  max={r.base_max:.1f}  E[roll]={r.base_e_roll:.1f}  min={r.base_min:.1f}"
+    )
     print()
-    print(f"  E[DMG]    = {r.e_dmg}  ±{r.std}")
+    print(f"  E[DMG]    = {r.e_dmg}")
+    print(f"  std       = {r.std}")
+    print(
+        f"  E[DMG] = expected (average) DMG, ↑ higher is better  ·  std = DMG fluctuation, ↓ lower is better"
+    )
     print()
 
     hdr = f"  {'Type':<8}  {'Avg DMG':>10}  {'Range':>26}  {'Hits P%':>10}"
     div = f"  {'-'*60}"
-    print(hdr); print(div)
+    print(hdr)
+    print(div)
     ranges = {
         "orange": "fixed",
         "yellow": f"{r.dmg_yellow_min:.0f} ~ {r.dmg_yellow_max:.0f}",
-        "white":  f"{r.dmg_white_min:.0f} ~ {r.dmg_white_max:.0f}",
-        "gray":   "fixed",
+        "white": f"{r.dmg_white_min:.0f} ~ {r.dmg_white_max:.0f}",
+        "gray": "fixed",
     }
-    for color, dmg_attr in [("orange","dmg_orange"), ("yellow","dmg_yellow"),
-                              ("white","dmg_white"),  ("gray","dmg_gray")]:
-        dmg  = getattr(r, dmg_attr)
+    for color, dmg_attr in [
+        ("orange", "dmg_orange"),
+        ("yellow", "dmg_yellow"),
+        ("white", "dmg_white"),
+        ("gray", "dmg_gray"),
+    ]:
+        dmg = getattr(r, dmg_attr)
         prob = getattr(r, f"p_{color}")
         print(f"  {color:<8}  {dmg:>10.2f}  {ranges[color]:>26}  {prob:>9.2f}%")
 
 
 def _print_simulate(
-    r:          DamageResult,
-    sim:        SimulateResult,
-    profile:    CharProfile,
-    skill:      SkillFormula,
-    target:     str   = "boss",
+    r: DamageResult,
+    sim: SimulateResult,
+    profile: CharProfile,
+    skill: SkillFormula,
+    target: str = "boss",
     affix_mult: float = 1.0,
 ) -> None:
     _print_resolve(r, profile, skill, target, affix_mult)
     print()
     print(f"  Simulation  (n={sim.n_rolls})")
     print(f"  {'-'*60}")
-    print(f"  E[DMG] sim  = {sim.mean}  ±{sim.std}")
+    print(f"  E[DMG] sim  = {sim.mean}")
+    print(f"  std    sim  = {sim.std}")
     print()
 
     print(f"  {'Stat':<15}  {'Theory':>12}  {'Sim':>12}")
     print(f"  {'-'*43}")
     for lbl, tv, sv in [
-        ("mean/E[DMG]", str(r.e_dmg),      str(sim.mean)),
-        ("std",         str(r.std),         str(sim.std)),
-        ("min",         str(r.dmg_gray),    str(sim.min_dmg)),
-        ("p10",         "—",               str(sim.p10)),
-        ("p90",         "—",               str(sim.p90)),
-        ("max",         "—",               str(sim.max_dmg)),
+        ("mean/E[DMG]", str(r.e_dmg), str(sim.mean)),
+        ("std", str(r.std), str(sim.std)),
+        ("min", str(r.dmg_gray), str(sim.min_dmg)),
+        ("p10", "—", str(sim.p10)),
+        ("p90", "—", str(sim.p90)),
+        ("max", "—", str(sim.max_dmg)),
     ]:
         print(f"  {lbl:<15}  {tv:>12}  {sv:>12}")
 
     print(f"\n  Total over {sim.n_rolls} hits = {sim.total:.0f}")
-    print(f"  {'Color':<8}  {'Total DMG':>12}  {'DMG %':>8}  {'Sim Hits P%':>10} {'Theory Hits P%':>14}")
+    print(
+        f"  {'Color':<8}  {'Total DMG':>12}  {'DMG %':>8}  {'Sim Hits P%':>10} {'Theory Hits P%':>14}"
+    )
     print(f"  {'-'*60}")
     for color in ("orange", "yellow", "white", "gray"):
-        tot_c  = getattr(sim, f"total_{color}")
-        pct_s  = tot_c / sim.total * 100 if sim.total > 0 else 0
+        tot_c = getattr(sim, f"total_{color}")
+        pct_s = tot_c / sim.total * 100 if sim.total > 0 else 0
         pct_hits_s = getattr(sim, f"p_{color}")
-        pct_hits_t  = getattr(r, f"p_{color}")
-        print(f"  {color:<8}  {tot_c:>12.0f}  {pct_s:>7.1f}%  {pct_hits_s:>9.1f}%  {pct_hits_t:>13.1f}%")
+        pct_hits_t = getattr(r, f"p_{color}")
+        print(
+            f"  {color:<8}  {tot_c:>12.0f}  {pct_s:>7.1f}%  {pct_hits_s:>9.1f}%  {pct_hits_t:>13.1f}%"
+        )
 
 
 def _print_comparison(
     base_result: DamageResult,
-    comparison:  List[Tuple[MarginalGain, DamageResult, float]],
-    profile:     CharProfile,
-    skill:       SkillFormula,
-    target:      str   = "boss",
-    affix_mult:  float = 1.0,
+    comparison: List[Tuple[MarginalGain, DamageResult, float]],
+    profile: CharProfile,
+    skill: SkillFormula,
+    target: str = "boss",
+    affix_mult: float = 1.0,
 ) -> None:
     print(f"\n{_SEP}")
     print(f"  Marginal gain comparison")
     print(f"  Profile: {profile.name}  ·  Skill: {skill.name}")
-    affix_str = f"  affix ×{affix_mult:.4f}" if (not skill.is_mystic and affix_mult != 1.0) else ""
+    affix_str = (
+        f"  affix ×{affix_mult:.4f}"
+        if (not skill.is_mystic and affix_mult != 1.0)
+        else ""
+    )
     print(f"  Target: {target}{affix_str}")
     print(f"  Baseline  E[DMG] = {base_result.e_dmg}  ±{base_result.std}")
     print(_SEP)
-    print(f"  {'Gain':<32}  {'E[DMG]':>10}  {'Δ DMG':>9}  {'Δ%':>7}")
-    print(f"  {'-'*62}")
+    print(
+        f"  E[DMG] = expected (average) DMG, ↑ higher is better  ·  std = DMG fluctuation, ↓ lower is better"
+    )
+    print(
+        f"  {'Gain':<32}  {'E[DMG]':>10}  {'Δ DMG':>9}  {'Δ%':>7}  {'std':>10}  {'Δ std':>9}"
+    )
+    print(f"  {'-'*80}")
     base_e = base_result.e_dmg
+    base_std = base_result.std
     for gain, result, delta in comparison:
         pct = delta / base_e * 100 if base_e != 0 else 0.0
-        print(f"  {gain.name:<32}  {result.e_dmg:>10.2f}  {delta:>+9.2f}  {pct:>+6.2f}%")
+        delta_std = result.std - base_std
+        print(
+            f"  {gain.name:<32}  {result.e_dmg:>10.2f}  {delta:>+9.2f}  {pct:>+6.2f}%  {result.std:>10.2f}  {delta_std:>+9.2f}"
+        )
+
+
+def _print_profile_comparison(
+    r1: DamageResult,
+    r2: DamageResult,
+    profile1: CharProfile,
+    profile2: CharProfile,
+    skill: SkillFormula,
+    target: str = "boss",
+    affix_mult1: float = 1.0,
+    affix_mult2: float = 1.0,
+) -> None:
+    n1 = profile1.name[:18]
+    n2 = profile2.name[:18]
+    affix_str = (
+        f"Affix: P1 ×{affix_mult1:.4f}  P2 ×{affix_mult2:.4f}"
+        if not skill.is_mystic
+        else ""
+    )
+    print(f"\n{_SEP}")
+    print(f"  Profile comparison  ·  {skill.name}  ({skill.skill_type})")
+    print(f"  Target: {target}")
+    print(f"  {affix_str}")
+    print(_SEP)
+    print(
+        f"  E[DMG] = expected (average) DMG, ↑ higher is better  ·  std = DMG fluctuation, ↓ lower is better"
+    )
+    print(f"  {'Stat':<16}  {n1:>18}  {n2:>18}  {'Δ':>10}  {'Δ%':>7}")
+    print(f"  {_DIV}")
+
+    def row(label: str, v1: float, v2: float) -> None:
+        d = v2 - v1
+        p_str = f"{d / v1 * 100:>+6.2f}%" if v1 != 0 else f"{'—':>7}"
+        print(f"  {label:<16}  {v1:>18.2f}  {v2:>18.2f}  {d:>+10.2f}  {p_str}")
+
+    def row6(label: str, v1: float, v2: float) -> None:
+        d = v2 - v1
+        p_str = f"{d / v1 * 100:>+6.2f}%" if v1 != 0 else f"{'—':>7}"
+        print(f"  {label:<16}  {v1:>18.6f}  {v2:>18.6f}  {d:>+10.6f}  {p_str}")
+
+    row("E[DMG]", r1.e_dmg, r2.e_dmg)
+    row("std", r1.std, r2.std)
+    print(f"  {_DIV}")
+    row6("buff_mult", r1.buff_mult, r2.buff_mult)
+    row6("affix_mult", r1.affix_mult, r2.affix_mult)
+    print(f"  {_DIV}")
+    row("base max", r1.base_max, r2.base_max)
+    row("base E[roll]", r1.base_e_roll, r2.base_e_roll)
+    row("base min", r1.base_min, r2.base_min)
+    print(f"  {_DIV}")
+    row("orange DMG", r1.dmg_orange, r2.dmg_orange)
+    row("yellow DMG", r1.dmg_yellow, r2.dmg_yellow)
+    row("white DMG", r1.dmg_white, r2.dmg_white)
+    row("gray DMG", r1.dmg_gray, r2.dmg_gray)
 
 
 # ─────────────────────────────────────────────
@@ -585,10 +719,12 @@ def _select_profile() -> Optional[CharProfile]:
     try:
         pid = int(raw)
     except ValueError:
-        print("  Not a valid ID."); return None
+        print("  Not a valid ID.")
+        return None
     p = get_profile_by_id(pid)
     if not p:
-        print(f"  Profile ID={pid} not found."); return None
+        print(f"  Profile ID={pid} not found.")
+        return None
     return p
 
 
@@ -602,8 +738,8 @@ def _select_skill() -> Optional[SkillFormula]:
     print("  " + "-" * 72)
     for i, f in enumerate(skills, 1):
         stype = "mystic" if f.is_mystic else "martial"
-        sub   = f.mystic_type or f.weapon_type or ""
-        dot   = "  DOT" if f.is_dot else ""
+        sub = f.mystic_type or f.weapon_type or ""
+        dot = "  DOT" if f.is_dot else ""
         print(f"  {i:>4}  {f.name:<30}  {stype:<10}  {sub:<24}{dot}")
     print()
     try:
@@ -615,9 +751,11 @@ def _select_skill() -> Optional[SkillFormula]:
     try:
         idx = int(raw)
     except ValueError:
-        print("  Not a valid number."); return None
+        print("  Not a valid number.")
+        return None
     if not (1 <= idx <= len(skills)):
-        print(f"  Out of range (1–{len(skills)})."); return None
+        print(f"  Out of range (1–{len(skills)}).")
+        return None
     return skills[idx - 1]
 
 
@@ -627,12 +765,12 @@ def _ask_combat_context(skill: SkillFormula) -> Tuple[float, str]:
     Returns (affix_mult, target).  Default: affix_mult=1.0, target='boss'.
     """
     try:
-        raw    = input("  Target [boss/pvp] (Enter=boss): ").strip().lower()
+        raw = input("  Target [boss/pvp] (Enter=boss): ").strip().lower()
         target = "pvp" if raw in ("pvp", "player", "p") else "boss"
 
         affix_mult = 1.0
         if not skill.is_mystic:
-            raw2 = input("  Attunement affix DMG bonus [0.0]: ").strip()
+            raw2 = input("  Attunement affix DMG bonus (5% → 0.05) [0.0]: ").strip()
             try:
                 bonus = float(raw2) if raw2 else 0.0
             except ValueError:
@@ -645,10 +783,10 @@ def _ask_combat_context(skill: SkillFormula) -> Tuple[float, str]:
 
 
 def _mode_simulate(
-    profile:    CharProfile,
-    skill:      SkillFormula,
+    profile: CharProfile,
+    skill: SkillFormula,
     affix_mult: float,
-    target:     str,
+    target: str,
 ) -> None:
     try:
         raw = input("  Number of rolls [100]: ").strip()
@@ -662,20 +800,22 @@ def _mode_simulate(
         print("  Invalid number of rolls. Using 100.")
         n_rolls = 100
 
-    r   = resolve(profile, skill, affix_mult, target)
+    r = resolve(profile, skill, affix_mult, target)
     sim = simulate(profile, skill, n_rolls, affix_mult, target)
     _print_simulate(r, sim, profile, skill, target, affix_mult)
 
 
 def _mode_marginal(
-    profile:    CharProfile,
-    skill:      SkillFormula,
+    profile: CharProfile,
+    skill: SkillFormula,
     affix_mult: float,
-    target:     str,
+    target: str,
 ) -> None:
     gains = list_gains()
     if not gains:
-        print("  No marginal gains found. Use 'marginal_gain_db.py add' to create some.")
+        print(
+            "  No marginal gains found. Use 'marginal_gain_db.py add' to create some."
+        )
         return
 
     print(f"\n  {'ID':>4}  {'Name':<32}  Deltas")
@@ -706,7 +846,8 @@ def _mode_marginal(
             try:
                 gid = int(part)
             except ValueError:
-                print(f"  '{part}' is not a valid ID, skipping."); continue
+                print(f"  '{part}' is not a valid ID, skipping.")
+                continue
             g = next((g for g in gains if g.id == gid), None)
             if not g:
                 print(f"  Gain ID={gid} not found, skipping.")
@@ -714,11 +855,45 @@ def _mode_marginal(
                 selected.append(g)
 
     if not selected:
-        print("  No gains selected."); return
+        print("  No gains selected.")
+        return
 
     base_result = resolve(profile, skill, affix_mult, target)
-    comparison  = compare_gains(profile, skill, selected, affix_mult, target)
+    comparison = compare_gains(profile, skill, selected, affix_mult, target)
     _print_comparison(base_result, comparison, profile, skill, target, affix_mult)
+
+
+def _mode_profile_compare(
+    profile: CharProfile,
+    skill: SkillFormula,
+    affix_mult: float,
+    target: str,
+) -> None:
+    print(f"\n{_SEP}\n  Select second profile to compare\n{_SEP}")
+    profile2 = _select_profile()
+    if profile2 is None:
+        return
+
+    affix_mult2 = 1.0
+    if not skill.is_mystic:
+        try:
+            raw = input(
+                f"  Profile {profile2.name} attunement affix DMG bonus (5% → 0.05) [0.0]: "
+            ).strip()
+            try:
+                bonus = float(raw) if raw else 0.0
+            except ValueError:
+                bonus = 0.0
+            affix_mult2 = 1.0 + bonus
+        except (KeyboardInterrupt, EOFError):
+            pass
+
+    r1, r2, _ = compare_profiles(
+        profile, profile2, skill, affix_mult, affix_mult2, target
+    )
+    _print_profile_comparison(
+        r1, r2, profile, profile2, skill, target, affix_mult, affix_mult2
+    )
 
 
 # ─────────────────────────────────────────────
@@ -738,7 +913,8 @@ def _cli() -> None:
         print(f"\n{_SEP}\n  Select Profile\n{_SEP}")
         profile = _select_profile()
         if profile is None:
-            print("  Goodbye."); return
+            print("  Goodbye.")
+            return
 
         # ── Select skill ──────────────────────
         while True:
@@ -753,8 +929,11 @@ def _cli() -> None:
 
             # ── Mode loop ─────────────────────
             while True:
-                affix_str = (f"  Affix   : ×{affix_mult:.4f}"
-                             if (not skill.is_mystic and affix_mult != 1.0) else "")
+                affix_str = (
+                    f"  Affix   : ×{affix_mult:.4f}"
+                    if (not skill.is_mystic and affix_mult != 1.0)
+                    else ""
+                )
                 print(f"\n{_SEP}")
                 print(f"  Profile : {profile.name}")
                 print(f"  Skill   : {skill.name}  ({skill.skill_type})")
@@ -764,34 +943,40 @@ def _cli() -> None:
                 print(_SEP)
                 print("  [1] Simulate")
                 print("  [2] Marginal gain comparison")
-                print("  [3] Change context  (target / affix)")
-                print("  [4] Change skill")
-                print("  [5] Change profile")
+                print("  [3] Compare with another profile")
+                print("  [4] Change context  (target / affix)")
+                print("  [5] Change skill")
+                print("  [6] Change profile")
                 print("  [0] Quit")
                 print()
                 try:
                     choice = input("  Mode: ").strip()
                 except (KeyboardInterrupt, EOFError):
-                    print("\n  Goodbye."); return
+                    print("\n  Goodbye.")
+                    return
 
                 if choice == "1":
                     _mode_simulate(profile, skill, affix_mult, target)
                 elif choice == "2":
                     _mode_marginal(profile, skill, affix_mult, target)
                 elif choice == "3":
+                    _mode_profile_compare(profile, skill, affix_mult, target)
+                elif choice == "4":
                     print(f"\n{_SEP}\n  Combat context\n{_SEP}")
                     affix_mult, target = _ask_combat_context(skill)
-                elif choice == "4":
-                    break    # re-select skill
                 elif choice == "5":
-                    skill = None; break   # break inner → back to profile
+                    break  # re-select skill
+                elif choice == "6":
+                    skill = None
+                    break  # break inner → back to profile
                 elif choice == "0":
-                    print("  Goodbye."); return
+                    print("  Goodbye.")
+                    return
                 else:
                     print("  Invalid choice.")
 
             if skill is None:
-                break   # back to outer while → profile selection
+                break  # back to outer while → profile selection
 
 
 if __name__ == "__main__":

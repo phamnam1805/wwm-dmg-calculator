@@ -1,1 +1,4 @@
-dbs/*.db
+.claude/
+__pycache__/
+*.pyc
+*.pyo
