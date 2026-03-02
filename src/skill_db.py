@@ -146,8 +146,14 @@ class SkillFormula:
             self.weapon_type    = None             # mystic skills not weapon-specific
             self.attribute_type = None             # not applicable to mystic
         else:
-            self.attr_coeff  = self.phys_coeff * 1.5  # always enforced for martial art
-            self.mystic_type = None                    # not applicable to martial art
+            self.mystic_type = None  # not applicable to martial art
+            if self.is_dot:
+                # DOT: no phys_bonus, no attr_bonus, no x1.5 scaling on main attribute
+                self.attr_coeff  = self.phys_coeff
+                self.phys_bonus  = 0.0
+                self.attr_bonus  = 0.0
+            else:
+                self.attr_coeff  = self.phys_coeff * 1.5
 
 
 # ─────────────────────────────────────────────
