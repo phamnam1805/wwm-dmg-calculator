@@ -8,6 +8,7 @@ Damage calculator for **Where Winds Meet**.
 python calculator.py                    # current stats + active skill
 python calculator.py change.cnf         # compare base vs override
 python calculator.py -s "skill name"    # select skill formula
+python calculator.py pinda-stats.cnf -s "soaring spin 2nd hit"    # Compare base vs pinda-stats.cnf over skill Soaring Spin 2nd hit
 python calculator.py change.cnf -v      # include double marginal gain
 ```
 
