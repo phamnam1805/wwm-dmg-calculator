@@ -475,16 +475,16 @@ def compare_profiles(
     affix_mult1: float = 1.0,
     affix_mult2: float = 1.0,
     target: str = "boss",
-    innerway_bonus: float = 0.0,
+    innerway_bonus1: float = 0.0,
+    innerway_bonus2: float = 0.0,
 ) -> Tuple[DamageResult, DamageResult, float]:
     """
     Compare two profiles for the same skill and combat context.
-    Each profile has its own affix_mult (attunement affix DMG bonus).
-    innerway_bonus is shared across both profiles (same active innerway).
+    Each profile has its own affix_mult and innerway_bonus.
     Returns (result1, result2, delta_e_dmg) where delta = result2.e_dmg - result1.e_dmg.
     """
-    r1 = resolve(profile1, skill, affix_mult1, target, innerway_bonus)
-    r2 = resolve(profile2, skill, affix_mult2, target, innerway_bonus)
+    r1 = resolve(profile1, skill, affix_mult1, target, innerway_bonus1)
+    r2 = resolve(profile2, skill, affix_mult2, target, innerway_bonus2)
     delta = round(r2.e_dmg - r1.e_dmg, 2)
     return r1, r2, delta
 
@@ -680,6 +680,8 @@ def _print_profile_comparison(
     target: str = "boss",
     affix_mult1: float = 1.0,
     affix_mult2: float = 1.0,
+    innerway_bonus1: float = 0.0,
+    innerway_bonus2: float = 0.0,
 ) -> None:
     n1 = profile1.name[:18]
     n2 = profile2.name[:18]
@@ -688,10 +690,18 @@ def _print_profile_comparison(
         if not skill.is_mystic
         else ""
     )
+    iw_str = (
+        f"Innerway: P1 {innerway_bonus1*100:+.2f}%  P2 {innerway_bonus2*100:+.2f}%"
+        if (innerway_bonus1 != 0.0 or innerway_bonus2 != 0.0)
+        else ""
+    )
     print(f"\n{_SEP}")
     print(f"  Profile comparison  ·  {skill.name}  ({skill.skill_type})")
     print(f"  Target: {target}")
-    print(f"  {affix_str}")
+    if affix_str:
+        print(f"  {affix_str}")
+    if iw_str:
+        print(f"  {iw_str}")
     print(_SEP)
     print(
         f"  E[DMG] = expected (average) DMG, ↑ higher is better  ·  std = DMG fluctuation, ↓ lower is better"
@@ -965,11 +975,16 @@ def _mode_profile_compare(
         except (KeyboardInterrupt, EOFError):
             pass
 
+    print(f"\n  Innerway for {profile2.name}:")
+    innerway_bonus2 = _ask_innerway_bonus()
+
     r1, r2, _ = compare_profiles(
-        profile, profile2, skill, affix_mult, affix_mult2, target, innerway_bonus
+        profile, profile2, skill, affix_mult, affix_mult2, target,
+        innerway_bonus, innerway_bonus2
     )
     _print_profile_comparison(
-        r1, r2, profile, profile2, skill, target, affix_mult, affix_mult2
+        r1, r2, profile, profile2, skill, target, affix_mult, affix_mult2,
+        innerway_bonus, innerway_bonus2
     )
 
 
