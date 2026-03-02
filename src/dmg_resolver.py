@@ -497,6 +497,8 @@ def _print_resolve(
     print(f"\n{_SEP}")
     print(f"  {profile.name}  ·  {skill.name}  ({skill.skill_type})")
     print(_SEP)
+    print(f"  Formula: final DMG = base DMG × hit type mult (crit/affi) × buff_mult × affix_mult")
+    print()
 
     # buff_mult breakdown
     target_b = profile.boss_dmg_bonus if target == "boss" else profile.pvp_dmg_bonus
@@ -618,7 +620,7 @@ def _print_comparison(
     print(f"  Marginal gain comparison")
     print(f"  Profile: {profile.name}  ·  Skill: {skill.name}")
     affix_str = (
-        f"  affix ×{affix_mult:.4f}"
+        f"  ·  affix ×{affix_mult:.4f}"
         if (not skill.is_mystic and affix_mult != 1.0)
         else ""
     )
