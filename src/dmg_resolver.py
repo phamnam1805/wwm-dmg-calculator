@@ -509,13 +509,51 @@ def _print_skill_line(f: SkillFormula) -> None:
     print(f"  {f.id:>4}  {f.name:<30}  {stype:<10}  {sub:<24}{dot}")
 
 
-def _print_skill_formula(skill: SkillFormula) -> None:
-    """Print the symbolic base DMG formula for a skill (same for all profiles)."""
-    if skill.is_mystic:
-        print(f"  Base DMG  = phys_coeff × phys_atk + phys_coeff × other_attr_atk")
+def _print_base_dmg_formula(skill: SkillFormula, profile: CharProfile) -> None:
+    """Print the base DMG formula with actual coefficients, bonuses, and computed dmg_mults."""
+    pc = skill.phys_coeff
+    phys_mult = _phys_dmg_mult(profile)
+
+    # ── Formula lines ──
+    if skill.is_dot:
+        # DOT: phys_bonus=0, attr_bonus=0, attr_coeff=phys_coeff (no x1.5)
+        print(f"  Base DMG  = {pc:.2f} × phys_atk × {phys_mult:.4f}  [DOT: no phys_bonus]")
+        for attr in ATTRIBUTES:
+            mult = _attr_dmg_mult(profile, attr)
+            main = attr == skill.attribute_type
+            tag = "  ← main  [DOT: no x1.5, no attr_bonus]" if main else ""
+            print(f"            + {pc:.2f} × {attr}_atk × {mult:.4f}{tag}")
+    elif skill.is_mystic:
+        pb = skill.phys_bonus
+        print(f"  Base DMG  = {pc:.2f} × (phys_atk + {pb:.2f}) × {phys_mult:.4f}")
+        for attr in ATTRIBUTES:
+            mult = _attr_dmg_mult(profile, attr)
+            print(f"            + {pc:.2f} × {attr}_atk × {mult:.4f}")
     else:
-        print(f"  Base DMG  = phys_coeff × phys_atk + attr_coeff × main_attr_atk")
-        print(f"            + phys_coeff × other_attr_atk")
+        # Regular martial art
+        ac = skill.attr_coeff
+        pb = skill.phys_bonus
+        ab = skill.attr_bonus
+        print(f"  Base DMG  = {pc:.2f} × (phys_atk + {pb:.2f}) × {phys_mult:.4f}")
+        for attr in ATTRIBUTES:
+            mult = _attr_dmg_mult(profile, attr)
+            main = attr == skill.attribute_type
+            if main:
+                print(f"            + {ac:.2f} × ({attr}_atk + {ab:.2f}) × {mult:.4f}  ← main")
+            else:
+                print(f"            + {pc:.2f} × {attr}_atk × {mult:.4f}")
+
+    # ── DMG mult breakdown ──
+    print(f"  dmg_mult = (1 + pen/200) × (1 + dmg_bonus):")
+    phys_pen = profile.physical_pen
+    phys_db = profile.physical_dmg_bonus
+    print(f"    {'phys:':<13} pen={phys_pen:.1f}  dmg_bonus={phys_db:.4f}  → {phys_mult:.4f}")
+    for attr in ATTRIBUTES:
+        pen_a = getattr(profile, f"{attr}_pen")
+        bonus_a = getattr(profile, f"{attr}_dmg_bonus")
+        mult_a = _attr_dmg_mult(profile, attr)
+        main_tag = "  ← main" if (not skill.is_mystic and attr == skill.attribute_type) else ""
+        print(f"    {attr + ':':<13} pen={pen_a:.1f}  dmg_bonus={bonus_a:.4f}  → {mult_a:.4f}{main_tag}")
 
 
 def _print_multiplier_block(
@@ -526,7 +564,9 @@ def _print_multiplier_block(
     affix_mult: float,
     innerway_bonus: float,
 ) -> None:
-    """Print buff_mult breakdown, affix_mult, and final_dmg line."""
+    """Print base DMG formula, buff_mult breakdown, affix_mult, and final_dmg line."""
+    _print_base_dmg_formula(skill, profile)
+    print()
     target_b = profile.boss_dmg_bonus if target == "boss" else profile.pvp_dmg_bonus
 
     print(f"  buff_mult  = 1.00")
@@ -577,8 +617,6 @@ def _print_resolve(
     print(f"  Skill   : {skill.name}  ({skill_info})")
     print(f"  Target  : {target}")
     print(_SEP)
-    _print_skill_formula(skill)
-    print()
     _print_multiplier_block(r, profile, skill, target, affix_mult, innerway_bonus)
     print(_DIV)
     print(
@@ -677,8 +715,6 @@ def _print_comparison(
     print(f"  Skill   : {skill.name}  ({skill_info})")
     print(f"  Target  : {target}")
     print(_SEP)
-    _print_skill_formula(skill)
-    print()
     _print_multiplier_block(base_result, profile, skill, target, affix_mult, innerway_bonus)
     print(_DIV)
     print(f"  Baseline  E[DMG] = {base_result.e_dmg}  ±{base_result.std}")
@@ -721,8 +757,6 @@ def _print_profile_comparison(
     print(f"  Profile comparison  ·  {skill.name}  ({skill_info})")
     print(f"  Target  : {target}")
     print(_SEP)
-    _print_skill_formula(skill)
-    print()
     print(f"  [P1] {profile1.name}")
     _print_multiplier_block(r1, profile1, skill, target, affix_mult1, innerway_bonus1)
     print()
