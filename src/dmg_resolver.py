@@ -509,6 +509,56 @@ def _print_skill_line(f: SkillFormula) -> None:
     print(f"  {f.id:>4}  {f.name:<30}  {stype:<10}  {sub:<24}{dot}")
 
 
+def _print_skill_formula(skill: SkillFormula) -> None:
+    """Print the symbolic base DMG formula for a skill (same for all profiles)."""
+    if skill.is_mystic:
+        print(f"  Base DMG  = phys_coeff × phys_atk + phys_coeff × other_attr_atk")
+    else:
+        print(f"  Base DMG  = phys_coeff × phys_atk + attr_coeff × main_attr_atk")
+        print(f"            + phys_coeff × other_attr_atk")
+
+
+def _print_multiplier_block(
+    r: DamageResult,
+    profile: CharProfile,
+    skill: SkillFormula,
+    target: str,
+    affix_mult: float,
+    innerway_bonus: float,
+) -> None:
+    """Print buff_mult breakdown, affix_mult, and final_dmg line."""
+    target_b = profile.boss_dmg_bonus if target == "boss" else profile.pvp_dmg_bonus
+
+    print(f"  buff_mult  = 1.00")
+    if skill.is_mystic:
+        mt = skill.mystic_type or ""
+        mt_b = getattr(profile, f"{mt}_dmg_bonus", 0.0) if mt else 0.0
+        print(f"             + {mt_b:.4f}  {mt or '—'}")
+    else:
+        wt = skill.weapon_type or ""
+        wt_b = getattr(profile, f"{wt}_dmg_bonus", 0.0) if wt else 0.0
+        all_b = profile.all_martial_art_dmg_bonus
+        print(f"             + {all_b:.4f}  all martial art")
+        print(f"             + {wt_b:.4f}  {wt or '—'}")
+    print(f"             + {target_b:.4f}  {target}")
+    if innerway_bonus != 0.0:
+        print(f"             + {innerway_bonus:.4f}  innerway")
+    print(f"             = {r.buff_mult:.4f}")
+
+    if skill.is_mystic:
+        print(f"  affix_mult = 1.0000  (mystic — no attunement affix)")
+    else:
+        affix_b = affix_mult - 1.0
+        note = f"attunement +{affix_b:.4f}" if affix_b != 0.0 else "no attunement affix"
+        print(f"  affix_mult = {affix_mult:.4f}  ({note})")
+
+    am_str = f"{1.0:.4f}" if skill.is_mystic else f"{affix_mult:.4f}"
+    print(
+        f"  final_dmg  = base_dmg × hit_type_mult (crit/affi)"
+        f" × {r.buff_mult:.4f} × {am_str}"
+    )
+
+
 def _print_resolve(
     r: DamageResult,
     profile: CharProfile,
@@ -517,48 +567,20 @@ def _print_resolve(
     affix_mult: float = 1.0,
     innerway_bonus: float = 0.0,
 ) -> None:
-    print(f"\n{_SEP}")
-    print(f"  {profile.name}  ·  {skill.name}  ({skill.skill_type})")
-    print(_SEP)
-    print(f"  Formula: final DMG = base DMG × hit type mult (crit/affi) × buff_mult × affix_mult")
-    print()
+    if skill.is_mystic:
+        skill_info = f"mystic · {skill.mystic_type or '—'}"
+    else:
+        skill_info = f"martial_art · {skill.weapon_type or '—'} · {skill.attribute_type or '—'}"
 
-    # buff_mult breakdown
-    target_b = profile.boss_dmg_bonus if target == "boss" else profile.pvp_dmg_bonus
-    iw_str = f" + {innerway_bonus:.4f} (innerway)" if innerway_bonus != 0.0 else ""
-    if skill.is_mystic:
-        mt = skill.mystic_type or ""
-        mt_b = getattr(profile, f"{mt}_dmg_bonus", 0.0) if mt else 0.0
-        print(
-            f"  buff_mult  = 1.00"
-            f" + {mt_b:.4f} ({mt or '—'})"
-            f" + {target_b:.4f} ({target})"
-            f"{iw_str} = {r.buff_mult:.6f}"
-        )
-    else:
-        wt = skill.weapon_type or ""
-        wt_b = getattr(profile, f"{wt}_dmg_bonus", 0.0) if wt else 0.0
-        all_b = profile.all_martial_art_dmg_bonus
-        print(
-            f"  buff_mult  = 1.00"
-            f" + {all_b:.4f} (all martial)"
-            f" + {wt_b:.4f} ({wt or '—'})"
-            f" + {target_b:.4f} ({target})"
-            f"{iw_str} = {r.buff_mult:.6f}"
-        )
-    if skill.is_mystic:
-        print(f"  affix_mult = 1.000000  (mystic — no attunement affix)")
-    else:
-        affix_b = affix_mult - 1.0
-        print(
-            f"  affix_mult = {affix_mult:.6f}"
-            + (
-                f"  (attunement +{affix_b:.4f})"
-                if affix_b != 0.0
-                else "  (no attunement affix)"
-            )
-        )
+    print(f"\n{_SEP}")
+    print(f"  Profile : {profile.name}")
+    print(f"  Skill   : {skill.name}  ({skill_info})")
+    print(f"  Target  : {target}")
+    print(_SEP)
+    _print_skill_formula(skill)
     print()
+    _print_multiplier_block(r, profile, skill, target, affix_mult, innerway_bonus)
+    print(_DIV)
     print(
         f"  Base DMG  :  max={r.base_max:.1f}  E[roll]={r.base_e_roll:.1f}  min={r.base_min:.1f}"
     )
@@ -566,7 +588,8 @@ def _print_resolve(
     print(f"  E[DMG]    = {r.e_dmg}")
     print(f"  std       = {r.std}")
     print(
-        f"  E[DMG] = expected (average) DMG, ↑ higher is better  ·  std = DMG fluctuation, ↓ lower is better"
+        f"  E[DMG] = expected (average) DMG, ↑ higher is better"
+        f"  ·  std = DMG fluctuation, ↓ lower is better"
     )
     print()
 
@@ -642,18 +665,24 @@ def _print_comparison(
     skill: SkillFormula,
     target: str = "boss",
     affix_mult: float = 1.0,
+    innerway_bonus: float = 0.0,
 ) -> None:
+    if skill.is_mystic:
+        skill_info = f"mystic · {skill.mystic_type or '—'}"
+    else:
+        skill_info = f"martial_art · {skill.weapon_type or '—'} · {skill.attribute_type or '—'}"
+
     print(f"\n{_SEP}")
-    print(f"  Marginal gain comparison")
-    print(f"  Profile: {profile.name}  ·  Skill: {skill.name}")
-    affix_str = (
-        f"  ·  affix ×{affix_mult:.4f}"
-        if (not skill.is_mystic and affix_mult != 1.0)
-        else ""
-    )
-    print(f"  Target: {target}{affix_str}")
-    print(f"  Baseline  E[DMG] = {base_result.e_dmg}  ±{base_result.std}")
+    print(f"  Profile : {profile.name}")
+    print(f"  Skill   : {skill.name}  ({skill_info})")
+    print(f"  Target  : {target}")
     print(_SEP)
+    _print_skill_formula(skill)
+    print()
+    _print_multiplier_block(base_result, profile, skill, target, affix_mult, innerway_bonus)
+    print(_DIV)
+    print(f"  Baseline  E[DMG] = {base_result.e_dmg}  ±{base_result.std}")
+    print()
     print(
         f"  E[DMG] = expected (average) DMG, ↑ higher is better  ·  std = DMG fluctuation, ↓ lower is better"
     )
@@ -683,26 +712,26 @@ def _print_profile_comparison(
     innerway_bonus1: float = 0.0,
     innerway_bonus2: float = 0.0,
 ) -> None:
+    if skill.is_mystic:
+        skill_info = f"mystic · {skill.mystic_type or '—'}"
+    else:
+        skill_info = f"martial_art · {skill.weapon_type or '—'} · {skill.attribute_type or '—'}"
+
+    print(f"\n{_SEP}")
+    print(f"  Profile comparison  ·  {skill.name}  ({skill_info})")
+    print(f"  Target  : {target}")
+    print(_SEP)
+    _print_skill_formula(skill)
+    print()
+    print(f"  [P1] {profile1.name}")
+    _print_multiplier_block(r1, profile1, skill, target, affix_mult1, innerway_bonus1)
+    print()
+    print(f"  [P2] {profile2.name}")
+    _print_multiplier_block(r2, profile2, skill, target, affix_mult2, innerway_bonus2)
+    print(_DIV)
+
     n1 = profile1.name[:18]
     n2 = profile2.name[:18]
-    affix_str = (
-        f"Affix: P1 ×{affix_mult1:.4f}  P2 ×{affix_mult2:.4f}"
-        if not skill.is_mystic
-        else ""
-    )
-    iw_str = (
-        f"Innerway: P1 {innerway_bonus1*100:+.2f}%  P2 {innerway_bonus2*100:+.2f}%"
-        if (innerway_bonus1 != 0.0 or innerway_bonus2 != 0.0)
-        else ""
-    )
-    print(f"\n{_SEP}")
-    print(f"  Profile comparison  ·  {skill.name}  ({skill.skill_type})")
-    print(f"  Target: {target}")
-    if affix_str:
-        print(f"  {affix_str}")
-    if iw_str:
-        print(f"  {iw_str}")
-    print(_SEP)
     print(
         f"  E[DMG] = expected (average) DMG, ↑ higher is better  ·  std = DMG fluctuation, ↓ lower is better"
     )
@@ -946,7 +975,7 @@ def _mode_marginal(
 
     base_result = resolve(profile, skill, affix_mult, target, innerway_bonus)
     comparison = compare_gains(profile, skill, selected, affix_mult, target, innerway_bonus)
-    _print_comparison(base_result, comparison, profile, skill, target, affix_mult)
+    _print_comparison(base_result, comparison, profile, skill, target, affix_mult, innerway_bonus)
 
 
 def _mode_profile_compare(
