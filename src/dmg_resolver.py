@@ -525,7 +525,7 @@ def _print_base_dmg_formula(skill: SkillFormula, profile: CharProfile) -> None:
             print(f"            + {pc:.2f} × {attr}_atk × {mult:.4f}{tag}")
     elif skill.is_mystic:
         pb = skill.phys_bonus
-        print(f"  Base DMG  = {pc:.2f} × (phys_atk + {pb:.2f}) × {phys_mult:.4f}")
+        print(f"  Base DMG  = ({pc:.2f} × phys_atk + {pb:.2f}) × {phys_mult:.4f}")
         for attr in ATTRIBUTES:
             mult = _attr_dmg_mult(profile, attr)
             print(f"            + {pc:.2f} × {attr}_atk × {mult:.4f}")
@@ -534,7 +534,7 @@ def _print_base_dmg_formula(skill: SkillFormula, profile: CharProfile) -> None:
         ac = skill.attr_coeff
         pb = skill.phys_bonus
         ab = skill.attr_bonus
-        print(f"  Base DMG  = {pc:.2f} × (phys_atk + {pb:.2f}) × {phys_mult:.4f}")
+        print(f"  Base DMG  = ({pc:.2f} × phys_atk + {pb:.2f}) × {phys_mult:.4f}")
         for attr in ATTRIBUTES:
             mult = _attr_dmg_mult(profile, attr)
             main = attr == skill.attribute_type
