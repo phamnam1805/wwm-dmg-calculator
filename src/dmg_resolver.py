@@ -280,10 +280,16 @@ def resolve(
     dmg_gray = scaled_min
 
     # Hit-type probabilities
+    # Roll order: precision first.
+    #   Precise   → pie [0,a)=orange · [a,a+c)=yellow · [a+c,1)=white
+    #   Imprecise → roll affinity: <a=orange · ≥a=gray
+    # ⇒ P(orange)=a · P(gray)=(1-p)(1-a) · P(yellow)=p·min(c,1-a) · P(white)=p·max(1-a-c,0)
+    yellow_rate = min(c, max(1.0 - a, 0.0))   # fraction of precise hits → yellow
+    white_rate  = max(1.0 - a - c, 0.0)        # fraction of precise hits → white
     prob_orange = a
-    prob_yellow = (1 - a) * p * c
-    prob_white = (1 - a) * p * (1 - c)
-    prob_gray = (1 - a) * (1 - p)
+    prob_yellow = p * yellow_rate
+    prob_white  = p * white_rate
+    prob_gray   = (1 - p) * (1 - a)
 
     e_dmg = (
         prob_orange * dmg_orange
@@ -373,27 +379,37 @@ def simulate(
     base_mx = _base_max(profile, skill)
     base_mn = _base_min(profile, skill)
 
+    # Pie boundary for precise branch: [0,a)=orange · [a, yellow_cutoff)=yellow · rest=white
+    yellow_cutoff = min(a + c, 1.0)
+
     rng = random.SystemRandom()
     counts = {"orange": 0, "yellow": 0, "white": 0, "gray": 0}
     dmg_sum = {"orange": 0.0, "yellow": 0.0, "white": 0.0, "gray": 0.0}
     dmg_log: List[float] = []
 
     for _ in range(n_rolls):
-        if rng.random() < a:
-            dmg = base_mx * bm * am * aff
-            color = "orange"
-        elif rng.random() >= p:
-            dmg = base_mn * bm * am
-            color = "gray"
-        else:
-            roll = _base_roll_rng(profile, skill, rng)
-            scaled = roll * bm * am
-            if rng.random() < c:
-                dmg = scaled * crt
+        if rng.random() < p:
+            # ── Precise hit: single pie roll ──────────────────────────────
+            r = rng.random()
+            if r < a:
+                dmg = base_mx * bm * am * aff
+                color = "orange"
+            elif r < yellow_cutoff:
+                roll = _base_roll_rng(profile, skill, rng)
+                dmg = roll * bm * am * crt
                 color = "yellow"
             else:
-                dmg = scaled
+                roll = _base_roll_rng(profile, skill, rng)
+                dmg = roll * bm * am
                 color = "white"
+        else:
+            # ── Imprecise hit: roll affinity only ─────────────────────────
+            if rng.random() < a:
+                dmg = base_mx * bm * am * aff
+                color = "orange"
+            else:
+                dmg = base_mn * bm * am
+                color = "gray"
         counts[color] += 1
         dmg_sum[color] += dmg
         dmg_log.append(dmg)
